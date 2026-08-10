@@ -9,7 +9,7 @@
 #include "bregs.h" // struct bregs
 #include "hw/pic.h" // enable_hwirq
 #include "output.h" // debug_enter
-#include "romfile.h" // romfile_loadbool
+#include "romfile.h" // romfile_loadint
 #include "stacks.h" // call16_int
 #include "string.h" // memset
 
@@ -85,7 +85,7 @@ mathcp_setup(void)
      * presence information through fw_cfg.  Do not set bit 23 until the BIOS
      * actually supplies the corresponding real-mode mapping.
      */
-    if (romfile_loadbool("etc/weitek4167", 0)) {
+    if (romfile_loadint("etc/weitek4167", 0)) {
         dprintf(1, "Weitek 4167 present\n");
         Weitek4167EquipmentFlags = EAX_EQUIP_WEITEK_PRESENT;
     }
