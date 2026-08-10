@@ -9,13 +9,20 @@
 #include "bregs.h" // struct bregs
 #include "hw/pic.h" // enable_hwirq
 #include "output.h" // debug_enter
+#include "romfile.h" // romfile_loadbool
 #include "stacks.h" // call16_int
 #include "string.h" // memset
 
 #define PORT_MATH_CLEAR        0x00f0
 
+#define EAX_EQUIP_WEITEK_REALMODE (1 << 23)
+#define EAX_EQUIP_WEITEK_PRESENT  (1 << 24)
+
 // Indicator if POST phase has been started (and if it has completed).
 int HaveRunPost VARFSEG;
+
+// Extended INT 11h equipment flags for the Weitek coprocessor.
+static u32 Weitek4167EquipmentFlags VARFSEG;
 
 int
 in_post(void)
@@ -41,7 +48,12 @@ void VISIBLE16
 handle_11(struct bregs *regs)
 {
     debug_enter(regs, DEBUG_HDL_11);
-    regs->ax = GET_BDA(equipment_list_flags);
+
+    u32 weitek_flags = GET_GLOBAL(Weitek4167EquipmentFlags);
+    if (weitek_flags)
+        regs->eax = GET_BDA(equipment_list_flags) | weitek_flags;
+    else
+        regs->ax = GET_BDA(equipment_list_flags);
 }
 
 // INT 05h Print Screen Service Entry Point
@@ -65,6 +77,18 @@ mathcp_setup(void)
     // 80x87 coprocessor installed
     set_equipment_flags(0x02, 0x02);
     enable_hwirq(13, FUNC16(entry_75));
+
+    /*
+     * Compaq, Dell, and other 386/486 BIOSes extended INT 11h into EAX:
+     * bit 24 reports a Weitek coprocessor and bit 23 reports that page tables
+     * make the Weitek address space usable from real mode.  QEMU provides the
+     * presence information through fw_cfg.  Do not set bit 23 until the BIOS
+     * actually supplies the corresponding real-mode mapping.
+     */
+    if (romfile_loadbool("etc/weitek4167", 0)) {
+        dprintf(1, "Weitek 4167 present\n");
+        Weitek4167EquipmentFlags = EAX_EQUIP_WEITEK_PRESENT;
+    }
 }
 
 // INT 75 - IRQ13 - MATH COPROCESSOR EXCEPTION
