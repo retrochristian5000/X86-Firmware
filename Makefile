@@ -74,7 +74,7 @@ COMMONCFLAGS += $(call cc-option,$(CC),-Wno-array-bounds,)
 COMMONCFLAGS += $(call cc-option,$(CC),-fcf-protection=none,)
 COMMA := ,
 
-CFLAGS32FLAT := $(COMMONCFLAGS) -DMODE16=0 -DMODESEGMENT=0
+CFLAGS32FLAT := $(COMMONCFLAGS) -O2 -DMODE16=0 -DMODESEGMENT=0
 CFLAGSSEG := $(COMMONCFLAGS) -DMODESEGMENT=1 -fno-defer-pop \
     $(call cc-option,$(CC),-fno-jump-tables,-DMANUAL_NO_JUMP_TABLE) \
     $(call cc-option,$(CC),-fno-tree-switch-conversion,)
