@@ -321,16 +321,18 @@ def outXRefs(sections, useseg=0, exportsyms=[], forcedelta=0):
 
 # Write LD script includes for the given sections
 def outSections(sections, useseg=0):
+    sections = [((section.finalsegloc if useseg else section.finalloc), section)
+                for section in sections]
+    # GNU ld accepts absolute output sections in arbitrary order, but LLD
+    # derives their file ranges in script order and rejects backwards ranges.
+    sections.sort(key=operator.itemgetter(0))
     out = ""
-    for section in sections:
-        loc = section.finalloc
-        if useseg:
-            loc = section.finalsegloc
+    for loc, section in sections:
         out += "%s 0x%x : { *(%s) }\n" % (section.name, loc, section.name)
     return out
 
-# Write LD script includes for the given sections using relative offsets
-def outRelSections(sections, startsym, useseg=0):
+# Write LD script includes for the given sections using fixed locations
+def outRelSections(sections, useseg=0):
     sections = [(section.finalloc, section) for section in sections
                 if section.finalloc is not None]
     sections.sort(key=operator.itemgetter(0))
@@ -339,7 +341,7 @@ def outRelSections(sections, startsym, useseg=0):
         loc = section.finalloc
         if useseg:
             loc = section.finalsegloc
-        out += ". = ( 0x%x - %s ) ;\n" % (loc, startsym)
+        out += ". = ABSOLUTE(0x%x) ;\n" % (loc,)
         if section.name in ('.rodata.str1.1', '.rodata'):
             out += "_rodata%s = . ;\n" % (section.fileid,)
         out += "*%s.*(%s)\n" % (section.fileid, section.name)
@@ -443,7 +445,7 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
        sec32all_start,
        multiboot_header,
        relocstr,
-       outRelSections(li.sections, 'code32flat_start'))
+       outRelSections(li.sections))
     out = COMMONHEADER + out + COMMONTRAILER + """
 ENTRY(%s)
 PHDRS

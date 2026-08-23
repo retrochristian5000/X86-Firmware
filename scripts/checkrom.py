@@ -15,6 +15,24 @@ def checksum(data, start, size, csum):
     sumbyte = buildrom.checksum(data[start:start+size])
     return subst(data, start+csum, sumbyte)
 
+RESET_VECTOR_ADDR = 0xffff0
+RESET_VECTOR_DATA = b'\xea\x5b\xe0\x00\xf0'
+
+def checkResetVector(rawdata, start, symbols):
+    reset = symbols.get('reset_vector')
+    if reset is None:
+        return
+    if reset.offset != RESET_VECTOR_ADDR:
+        raise ValueError("Reset vector is not at 0xffff0 (got 0x%x)" % (
+            reset.offset,))
+
+    resetoff = RESET_VECTOR_ADDR - start
+    resetend = resetoff + len(RESET_VECTOR_DATA)
+    if resetoff < 0 or resetend > len(rawdata):
+        raise ValueError("Reset vector at 0xffff0 is outside linked image")
+    if rawdata[resetoff:resetend] != RESET_VECTOR_DATA:
+        raise ValueError("Invalid reset vector at 0xffff0")
+
 def main():
     # Get args
     objinfo, finalsize, rawfile, outfile = sys.argv[1:]
@@ -59,6 +77,15 @@ def main():
     if datasize != expdatasize:
         print("Error!  Unknown extra data (0x%x vs 0x%x)" % (
             datasize, expdatasize))
+        sys.exit(1)
+
+    # A PC BIOS must enter through the fixed far jump at 0xffff0.  Verify the
+    # linked bytes so a linker that drops or misrelocates nonstandard fixed
+    # sections cannot silently produce an unbootable image.
+    try:
+        checkResetVector(rawdata, start, symbols)
+    except ValueError as e:
+        print("Error!  %s" % (e,))
         sys.exit(1)
 
     # Fix up CSM Compatibility16 table

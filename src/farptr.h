@@ -14,9 +14,13 @@ extern u16 __segment_ES, __segment_CS, __segment_DS, __segment_SS;
 extern u16 __segment_FS, __segment_GS;
 
 // Low level macros for reading/writing memory via a segment selector.
-#define READ8_SEG(prefix, SEG, value, var)                      \
-    __asm__(prefix "movb %%" #SEG ":%1, %b0" : "=Qi"(value)     \
-            : "m"(var), "m"(__segment_ ## SEG))
+#define READ8_SEG(prefix, SEG, value, var) do {                 \
+        u8 __read8_value;                                       \
+        __asm__(prefix "movb %%" #SEG ":%1, %b0"               \
+                : "=Q"(__read8_value)                           \
+                : "m"(var), "m"(__segment_ ## SEG));           \
+        *(u8 *)&(value) = __read8_value;                        \
+    } while (0)
 #define READ16_SEG(prefix, SEG, value, var)                     \
     __asm__(prefix "movw %%" #SEG ":%1, %w0" : "=ri"(value)     \
             : "m"(var), "m"(__segment_ ## SEG))
@@ -30,9 +34,11 @@ extern u16 __segment_FS, __segment_GS;
         READ32_SEG(prefix, SEG, __value.hi, __r64_ptr->hi);     \
         *(u64*)&(value) = __value.val;                          \
     } while (0)
-#define WRITE8_SEG(prefix, SEG, var, value)                     \
-    __asm__(prefix "movb %b1, %%" #SEG ":%0" : "=m"(var)        \
-            : "Q"(value), "m"(__segment_ ## SEG))
+#define WRITE8_SEG(prefix, SEG, var, value) do {                \
+        u8 __write8_value = *(u8 *)&(value);                    \
+        __asm__(prefix "movb %b1, %%" #SEG ":%0" : "=m"(var)   \
+                : "Q"(__write8_value), "m"(__segment_ ## SEG)); \
+    } while (0)
 #define WRITE16_SEG(prefix, SEG, var, value)                    \
     __asm__(prefix "movw %w1, %%" #SEG ":%0" : "=m"(var)        \
             : "r"(value), "m"(__segment_ ## SEG))

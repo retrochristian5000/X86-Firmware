@@ -19,11 +19,11 @@ cat - > $TMPFILE1_ld <<EOF
 SECTIONS
 {
      .mysection 0x88f0 : {
-. = 0x10 ;
+. = ABSOLUTE(0x8900) ;
 *(.text.v1)
-. = 0x20 ;
+. = ABSOLUTE(0x8910) ;
 *(.text.v2)
-. = 0x30 ;
+. = ABSOLUTE(0x8920) ;
      }
 }
 EOF

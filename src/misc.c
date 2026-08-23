@@ -22,7 +22,7 @@
 int HaveRunPost VARFSEG;
 
 // Extended INT 11h equipment flags for the Weitek coprocessor.
-static u32 Weitek4167EquipmentFlags VARFSEG;
+u32 Weitek4167EquipmentFlags VARFSEG;
 
 int
 in_post(void)
