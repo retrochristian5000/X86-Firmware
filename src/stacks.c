@@ -276,7 +276,7 @@ __call32(void *func, u32 eax, u32 errret)
 }
 
 // Call a 16bit SeaBIOS function, restoring the mode from last call32().
-static u32
+static u32 noinline
 call16(u32 eax, u32 edx, void *func)
 {
     ASSERT32FLAT();
