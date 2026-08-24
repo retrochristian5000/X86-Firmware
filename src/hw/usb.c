@@ -6,6 +6,7 @@
 
 #include "biosvar.h" // GET_GLOBAL
 #include "config.h" // CONFIG_*
+#include "fw/paravirt.h" // qemu_cfg_enabled
 #include "malloc.h" // free
 #include "output.h" // dprintf
 #include "romfile.h" // romfile_loadint
@@ -429,7 +430,7 @@ usb_hub_port_setup(void *data)
         if (ret > 0)
             // Device connected.
             break;
-        if (ret < 0 || timer_check(hub->detectend))
+        if (ret < 0 || !hub->detectend || timer_check(hub->detectend))
             // No device found.
             goto done;
         msleep(5);
@@ -476,7 +477,7 @@ usb_enumerate(struct usbhub_s *hub)
 {
     u32 portcount = hub->portcount;
     hub->threads = portcount;
-    hub->detectend = timer_calc(usb_time_sigatt);
+    hub->detectend = usb_time_sigatt ? timer_calc(usb_time_sigatt) : 0;
 
     // Launch a thread for every port.
     int i;
@@ -504,7 +505,8 @@ usb_setup(void)
     if (! CONFIG_USB)
         return;
     dprintf(3, "init usb\n");
-    usb_time_sigatt = romfile_loadint("etc/usb-time-sigatt", USB_TIME_SIGATT);
+    u32 default_sigatt = qemu_cfg_enabled() ? 0 : USB_TIME_SIGATT;
+    usb_time_sigatt = romfile_loadint("etc/usb-time-sigatt", default_sigatt);
     xhci_setup();
     ehci_setup();
     uhci_setup();

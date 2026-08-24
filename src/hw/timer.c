@@ -7,6 +7,7 @@
 #include "biosvar.h" // GET_LOW
 #include "config.h" // CONFIG_*
 #include "output.h" // dprintf
+#include "romfile.h" // romfile_loadint
 #include "stacks.h" // yield
 #include "util.h" // timer_setup
 #include "x86.h" // cpuid
@@ -105,6 +106,12 @@ timer_setup(void)
         return;
     if (TimerPort != PORT_PIT_COUNTER0)
         return; // have timer already
+
+    u32 tsc_khz = romfile_loadint("etc/tsc-frequency-khz", 0);
+    if (tsc_khz) {
+        tsctimer_setfreq(tsc_khz, "fw_cfg");
+        return;
+    }
 
     // Check if CPU has a timestamp counter
     u32 eax, ebx, ecx, edx, cpuid_features = 0;
