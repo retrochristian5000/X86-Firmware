@@ -13,7 +13,8 @@ void handle_1553(struct bregs *regs);
 struct bmp_decdata *bmp_alloc(void);
 int bmp_decode(struct bmp_decdata *bmp, unsigned char *data, int data_size);
 void bmp_get_info(struct bmp_decdata *bmp, int *width, int *height, int *bpp);
-int bmp_show(struct bmp_decdata *bmp, unsigned char *data, int data_size);
+int bmp_show(struct bmp_decdata *bmp, unsigned char *pic, int width
+             , int height, int depth, int bytes_per_line_dest);
 
 // boot.c
 void boot_init(void);
