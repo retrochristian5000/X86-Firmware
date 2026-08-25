@@ -1,6 +1,6 @@
 // 32bit code to Power On Self Test (POST) a machine.
 //
-// Copyright (C) 2008-2013  Kevin O'Connor <kevin@oconnor.net>
+// Copyright (C) 2008-2013  Kevin O'Connor <kevin@koconnor.net>
 // Copyright (C) 2002  MandrakeSoft S.A.
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
