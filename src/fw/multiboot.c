@@ -245,11 +245,18 @@ multiboot_prepare_vga(struct multiboot_info *mbi)
     u8 gsize = mbi->framebuffer_green_mask_size;
     u8 bpos = mbi->framebuffer_blue_field_position;
     u8 bsize = mbi->framebuffer_blue_mask_size;
-    if (!rsize || !gsize || !bsize
+    u8 rgb_size = rsize + gsize + bsize;
+    if (!rsize || !gsize || !bsize || rgb_size > bpp
         || rpos + rsize > bpp || gpos + gsize > bpp || bpos + bsize > bpp)
         return;
 
-    u32 bypp = DIV_ROUND_UP(bpp, 8);
+    u64 rmask = ((1ULL << rsize) - 1) << rpos;
+    u64 gmask = ((1ULL << gsize) - 1) << gpos;
+    u64 bmask = ((1ULL << bsize) - 1) << bpos;
+    if ((rmask & gmask) || (rmask & bmask) || (gmask & bmask))
+        return;
+
+    u32 bypp = (bpp + 7) / 8;
     u64 minimum_pitch = (u64)mbi->framebuffer_width * bypp;
     u64 framebuffer_size = (u64)mbi->framebuffer_pitch
                            * mbi->framebuffer_height;
@@ -262,7 +269,7 @@ multiboot_prepare_vga(struct multiboot_info *mbi)
         used_end = gpos + gsize;
     if (used_end < bpos + bsize)
         used_end = bpos + bsize;
-    u8 reserved_size = used_end < bpp ? bpp - used_end : 0;
+    u8 reserved_size = bpp - rgb_size;
 
     struct multiboot_cb_table *table = (void *)MULTIBOOT_CB_TABLE_ADDR;
     memset(table, 0, sizeof(*table));
