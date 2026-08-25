@@ -10,7 +10,6 @@
 #include "block.h" // struct drive_s
 #include "blockcmd.h" // CDB_CMD_READ_10
 #include "byteorder.h" // be16_to_cpu
-#include "fw/paravirt.h" // qemu_cfg_enabled
 #include "malloc.h" // malloc_fseg
 #include "output.h" // dprintf
 #include "pci.h" // pci_config_readb
@@ -18,7 +17,6 @@
 #include "pci_ids.h" // PCI_CLASS_STORAGE_OTHER
 #include "pci_regs.h" // PCI_INTERRUPT_LINE
 #include "pic.h" // enable_hwirq
-#include "romfile.h" // romfile_loadint
 #include "stacks.h" // yield
 #include "std/disk.h" // DISK_RET_SUCCESS
 #include "string.h" // memset
@@ -95,10 +93,7 @@ ata_reset(struct atadrive_s *adrive_gf)
     outb(ATA_CB_DC_HD15 | ATA_CB_DC_NIEN | ATA_CB_DC_SRST, iobase2+ATA_CB_DC);
     udelay(5);
     outb(ATA_CB_DC_HD15 | ATA_CB_DC_NIEN, iobase2+ATA_CB_DC);
-    u32 reset_delay = romfile_loadint("etc/ata-reset-delay",
-                                      qemu_cfg_enabled() ? 0 : 2);
-    if (reset_delay)
-        msleep(reset_delay);
+    msleep(2);
 
     // wait for device to become not busy.
     int status = await_not_bsy(iobase1);
