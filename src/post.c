@@ -305,8 +305,10 @@ dopost(void)
 {
     code_mutable_preinit();
 
-    // Detect ram and setup internal malloc.
+    // Detect ram and setup internal malloc.  A GRUB launch supplies a real
+    // Multiboot memory map even though it does not supply coreboot tables.
     qemu_preinit();
+    multiboot_preinit();
     coreboot_preinit();
     malloc_preinit();
 
