@@ -1,6 +1,6 @@
 // 32bit code to Power On Self Test (POST) a machine.
 //
-// Copyright (C) 2008-2013  Kevin O'Connor <kevin@koconnor.net>
+// Copyright (C) 2008-2013  Kevin O'Connor <kevin@oconnor.net>
 // Copyright (C) 2002  MandrakeSoft S.A.
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
@@ -305,11 +305,12 @@ dopost(void)
 {
     code_mutable_preinit();
 
-    // Detect ram and setup internal malloc.  A GRUB launch supplies a real
-    // Multiboot memory map even though it does not supply coreboot tables.
+    // Detect ram and setup internal malloc.  Coreboot may install its legacy
+    // fallback first; a valid GRUB Multiboot map is authoritative for this
+    // launch and replaces it before the allocator or storage DMA setup runs.
     qemu_preinit();
-    multiboot_preinit();
     coreboot_preinit();
+    multiboot_preinit();
     malloc_preinit();
 
     // Relocate initialization code and call maininit().
