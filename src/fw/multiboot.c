@@ -19,7 +19,6 @@ struct mbfs_romfile_s {
 };
 
 u32 __VISIBLE entry_elf_eax, entry_elf_ebx;
-static int MultibootMemoryMap;
 
 static struct multiboot_info *
 get_multiboot_info(void)
@@ -53,12 +52,6 @@ multiboot_reserve_string(u32 addr)
 {
     if (addr)
         e820_add(addr, strlen((char *)addr) + 1, E820_RESERVED);
-}
-
-int
-multiboot_has_memory_map(void)
-{
-    return MultibootMemoryMap;
 }
 
 // Import the bootloader memory map before malloc_preinit().  A GRUB EFI launch
@@ -131,7 +124,6 @@ multiboot_preinit(void)
         }
     }
 
-    MultibootMemoryMap = 1;
     dprintf(1, "Using Multiboot memory map for RAM and DMA allocation.\n");
 }
 
