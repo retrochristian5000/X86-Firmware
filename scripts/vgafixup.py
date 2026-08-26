@@ -24,6 +24,7 @@ re_leal = re.compile(
     r'\(\s*(?P<base>[^,)]*?)\s*(?:,\s*(?P<index>[^,)]*?)\s*)?'
     r'(?:,\s*(?P<scale>[^,)]*?)\s*)?\)\s*'
     r',\s*(?P<dest>.*?)\s*$')
+re_call = re.compile(r'^call(?:[wlq])?\s+(?P<target>.+)$')
 
 # Find an alternate set of instructions for a given "leal" instruction
 def handle_leal(sline):
@@ -76,12 +77,13 @@ def main():
     out = []
     for line in infile:
         sline = line.strip()
+        m_call = re_call.match(sline)
         if sline == 'ret':
             out.append('retw $2\n')
         elif sline == 'leave':
             out.append('movl %ebp, %esp ; popl %ebp\n')
-        elif sline.startswith('call'):
-            out.append('pushw %ax ; callw' + sline[4:] + '\n')
+        elif m_call is not None:
+            out.append('pushw %ax ; callw %s\n' % (m_call.group('target'),))
         elif sline.startswith('leal'):
             out.append(handle_leal(sline))
             #print("-> %s\n   %s" % (sline, out[-1].strip()))
