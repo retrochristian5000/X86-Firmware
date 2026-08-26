@@ -12,6 +12,7 @@
 #include "std/multiboot.h" // MULTIBOOT_*
 #include "string.h" // memset
 #include "util.h" // multiboot_init
+#include "x86.h" // cpuid, rdmsr, wrmsr, readl, writel
 
 struct mbfs_romfile_s {
     struct romfile_s file;
@@ -27,6 +28,59 @@ get_multiboot_info(void)
         || !entry_elf_ebx)
         return NULL;
     return (void *)entry_elf_ebx;
+}
+
+// EFI GRUB may leave the local APIC enabled without the legacy virtual-wire
+// input that a reset/coreboot path normally establishes.  In that state the
+// i8259 can be programmed correctly while IRQ0/IRQ1 never reach SeaBIOS.  The
+// normal QEMU path repairs this in smp_scan(); do the equivalent here for a
+// Multiboot handoff before threads and keyboard hardware are enabled.
+#define MSR_IA32_APIC_BASE          0x01b
+#define MSR_IA32_APICBASE_EXTD      (1ULL << 10)
+#define MSR_IA32_APICBASE_ENABLE    (1ULL << 11)
+#define MSR_X2APIC_SVR              0x80f
+#define MSR_X2APIC_LVT_LINT0        0x835
+#define MSR_X2APIC_LVT_LINT1        0x836
+#define APIC_SVR                    0x0f0
+#define APIC_LINT0                  0x350
+#define APIC_LINT1                  0x360
+#define APIC_SVR_ENABLE             0x0100
+#define APIC_LINT0_EXTINT           0x8700
+#define APIC_LINT1_NMI              0x8400
+
+void
+multiboot_setup_legacy_irqs(void)
+{
+    if (!get_multiboot_info() || !CONFIG_HARDWARE_IRQ)
+        return;
+
+    u32 eax, ebx, ecx, features;
+    cpuid(1, &eax, &ebx, &ecx, &features);
+    if (!(features & CPUID_APIC) || !(features & CPUID_MSR))
+        return;
+
+    u64 apic_base = rdmsr(MSR_IA32_APIC_BASE);
+    if (!(apic_base & MSR_IA32_APICBASE_ENABLE)) {
+        // With the local APIC disabled, the legacy PIC can signal INTR
+        // directly and no virtual-wire repair is needed.
+        return;
+    }
+
+    if (apic_base & MSR_IA32_APICBASE_EXTD) {
+        u64 svr = rdmsr(MSR_X2APIC_SVR);
+        wrmsr(MSR_X2APIC_SVR, svr | APIC_SVR_ENABLE);
+        wrmsr(MSR_X2APIC_LVT_LINT0, APIC_LINT0_EXTINT);
+        wrmsr(MSR_X2APIC_LVT_LINT1, APIC_LINT1_NMI);
+        dprintf(1, "Multiboot: restored x2APIC legacy IRQ virtual wire.\n");
+        return;
+    }
+
+    u8 *base = (void *)(u32)(apic_base & 0xfffff000ULL);
+    u32 svr = readl(base + APIC_SVR);
+    writel(base + APIC_SVR, svr | APIC_SVR_ENABLE);
+    writel(base + APIC_LINT0, APIC_LINT0_EXTINT);
+    writel(base + APIC_LINT1, APIC_LINT1_NMI);
+    dprintf(1, "Multiboot: restored xAPIC legacy IRQ virtual wire.\n");
 }
 
 static u32
