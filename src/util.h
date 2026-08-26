@@ -13,7 +13,7 @@ void handle_1553(struct bregs *regs);
 struct bmp_decdata *bmp_alloc(void);
 int bmp_decode(struct bmp_decdata *bmp, unsigned char *data, int data_size);
 void bmp_get_info(struct bmp_decdata *bmp, int *width, int *height, int *bpp);
-int bmp_show(struct bmp_decdata *bmp, unsigned char *pic, int width
+void bmp_show(struct bmp_decdata *bmp, unsigned char *pic, int width
              , int height, int depth, int bytes_per_line_dest);
 
 // boot.c
@@ -45,8 +45,7 @@ struct chs_s;
 int boot_lchs_find_pci_device(struct pci_device *pci, struct chs_s *chs);
 int boot_lchs_find_scsi_device(struct pci_device *pci, int target, int lun,
                                struct chs_s *chs);
-int boot_lchs_find_ata_device(struct pci_device *pci, int chanid, int slave,
-                              struct chs_s *chs);
+int boot_lchs_find_ata_device(struct pci_device *pci, struct chs_s *chs);
 
 // bootsplash.c
 void enable_vga_console(void);
@@ -131,6 +130,7 @@ void mtrr_setup(void);
 // fw/multiboot.c
 void multiboot_preinit(void);
 void multiboot_init(void);
+void multiboot_setup_legacy_irqs(void);
 
 // fw/pciinit.c
 extern u64 pcimem_start, pcimem_end;
@@ -200,7 +200,7 @@ void pit_setup(void);
 
 // jpeg.c
 struct jpeg_decdata *jpeg_alloc(void);
-int jpeg_decode(struct jpeg_decdata *jpeg, unsigned char *buf);
+int jpeg_decode(struct jpeg_decdata *jpeg, unsigned char *data, int data_size);
 void jpeg_get_size(struct jpeg_decdata *jpeg, int *width, int *height);
 int jpeg_show(struct jpeg_decdata *jpeg, unsigned char *pic, int width
               , int height, int depth, int bytes_per_line_dest);
