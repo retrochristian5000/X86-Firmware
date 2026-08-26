@@ -68,6 +68,16 @@ handle_1552(struct bregs *regs)
     set_code_success(regs);
 }
 
+#define COMPAQ_ROM_REPLACEMENT_CTL 0x80c00000
+
+static u32
+gdt_desc_base(u64 desc)
+{
+    return ((desc >> 16) & 0x0000ffff)
+        | ((desc >> 16) & 0x00ff0000)
+        | ((desc >> 32) & 0xff000000);
+}
+
 static void
 handle_1587(struct bregs *regs)
 {
@@ -91,9 +101,26 @@ handle_1587(struct bregs *regs)
 
 // check for access rights of source & dest here
 
-    // Initialize GDT descriptor
     u64 *gdt_far = (void*)(regs->si + 0);
     u16 gdt_seg = regs->es;
+
+    /*
+     * COMPAQ 386 systems route ROM-replacement control through INT 15h/87h.
+     * A one-word move to physical 80c00000h writes the memory-mapped control
+     * register that disables ROM replacement and exposes the high 128K RAM.
+     * QEMU RAM is already writable there, so consume the control write instead
+     * of treating 80c00000h as an ordinary physical-memory destination.
+     */
+    u64 dst_desc = GET_FARVAR(gdt_seg, gdt_far[3]);
+    if (regs->cx == 1
+        && gdt_desc_base(dst_desc) == COMPAQ_ROM_REPLACEMENT_CTL) {
+        dprintf(3, "Compaq ROM replacement control via int15/87\n");
+        set_a20(prev_a20_enable);
+        set_code_success(regs);
+        return;
+    }
+
+    // Initialize GDT descriptor
     u32 loc = (u32)MAKE_FLATPTR(gdt_seg, gdt_far);
     SET_FARVAR(gdt_seg, gdt_far[1], GDT_DATA | GDT_LIMIT((6*sizeof(u64))-1)
                | GDT_BASE(loc));
