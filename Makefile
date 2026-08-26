@@ -18,6 +18,8 @@ ifneq ($(CROSS_PREFIX),)
 CC=$(CROSS_PREFIX)gcc
 endif
 AS=$(CROSS_PREFIX)as
+NASM?=nasm
+NASMFLAGS?=
 LD=$(CROSS_PREFIX)ld
 OBJCOPY=$(CROSS_PREFIX)objcopy
 OBJDUMP=$(CROSS_PREFIX)objdump
@@ -139,6 +141,13 @@ $(OUT)%.s: %.c
 $(OUT)%.o: %.c $(OUT)autoconf.h
 	@echo "  Compile checking $@"
 	$(Q)$(CC) $(CFLAGS32FLAT) -c $< -o $@
+
+# NASM sources are explicitly .asm so GAS-oriented .S and compiler-generated
+# assembly keep their existing toolchain. SeaBIOS objects are always ELF32/i386.
+$(OUT)%.o: %.asm
+	@echo "  Assembling (NASM) $@"
+	$(Q)mkdir -p $(dir $@)
+	$(Q)$(NASM) -f elf32 $(NASMFLAGS) -o $@ $<
 
 $(OUT)%.lds: %.lds.S
 	@echo "  Precompiling $@"
