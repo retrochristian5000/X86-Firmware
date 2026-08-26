@@ -83,7 +83,7 @@ def main():
         elif sline == 'leave':
             out.append('movl %ebp, %esp ; popl %ebp\n')
         elif m_call is not None:
-            out.append('pushw %ax ; callw %s\n' % (m_call.group('target'),))
+            out.append('pushw %ax ; callw ' + m_call.group('target') + '\n')
         elif sline.startswith('leal'):
             out.append(handle_leal(sline))
             #print("-> %s\n   %s" % (sline, out[-1].strip()))
