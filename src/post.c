@@ -140,8 +140,11 @@ platform_hardware_setup(void)
     // Make sure legacy DMA isn't running.
     dma_setup();
 
-    // Init base pc hardware.
+    // Init base pc hardware.  A Multiboot launch from EFI GRUB can inherit a
+    // local APIC without the legacy ExtINT virtual wire, so restore that bridge
+    // immediately after resetting the 8259 and before interrupts are enabled.
     pic_setup();
+    multiboot_setup_legacy_irqs();
     thread_setup();
     mathcp_setup();
 
