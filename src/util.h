@@ -16,6 +16,13 @@ void bmp_get_info(struct bmp_decdata *bmp, int *width, int *height, int *bpp);
 int bmp_show(struct bmp_decdata *bmp, unsigned char *pic, int width
              , int height, int depth, int bytes_per_line_dest);
 
+// pcx.c
+struct pcx_decdata *pcx_alloc(void);
+int pcx_decode(struct pcx_decdata *pcx, unsigned char *data, int data_size);
+void pcx_get_info(struct pcx_decdata *pcx, int *width, int *height);
+int pcx_show(struct pcx_decdata *pcx, unsigned char *pic, int width
+             , int height, int depth, int bytes_per_line_dest);
+
 // boot.c
 void boot_init(void);
 void boot_add_bev(u16 seg, u16 bev, u16 desc, int prio);

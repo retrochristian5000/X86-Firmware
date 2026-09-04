@@ -94,27 +94,38 @@ find_videomode(struct vbe_info *vesa_info, struct vbe_mode_info *mode_info
 
 static int BootsplashActive;
 
+enum splash_type {
+    SPLASH_JPEG,
+    SPLASH_BMP,
+    SPLASH_PCX,
+};
+
 void
 enable_bootsplash(void)
 {
     if (!CONFIG_BOOTSPLASH)
         return;
-    /* splash picture can be bmp or jpeg file */
+    /* Splash picture can be jpeg, bmp, or pcx. */
     dprintf(3, "Checking for bootsplash\n");
-    u8 type = 0; /* 0 means jpg, 1 means bmp, default is 0=jpg */
+    enum splash_type type = SPLASH_JPEG;
     int filesize;
     u8 *filedata = romfile_loadfile("bootsplash.jpg", &filesize);
     if (!filedata) {
         filedata = romfile_loadfile("bootsplash.bmp", &filesize);
-        if (!filedata)
-            return;
-        type = 1;
+        type = SPLASH_BMP;
     }
+    if (!filedata) {
+        filedata = romfile_loadfile("bootsplash.pcx", &filesize);
+        type = SPLASH_PCX;
+    }
+    if (!filedata)
+        return;
     dprintf(3, "start showing bootsplash\n");
 
     u8 *picture = NULL; /* data buff used to be flushed to the video buf */
     struct jpeg_decdata *jpeg = NULL;
     struct bmp_decdata *bmp = NULL;
+    struct pcx_decdata *pcx = NULL;
     struct vbe_info *vesa_info = malloc_tmplow(sizeof(*vesa_info));
     struct vbe_mode_info *mode_info = malloc_tmplow(sizeof(*mode_info));
     if (!vesa_info || !mode_info) {
@@ -145,7 +156,7 @@ enable_bootsplash(void)
 
     int ret, width, height;
     int bpp_require = 0;
-    if (type == 0) {
+    if (type == SPLASH_JPEG) {
         jpeg = jpeg_alloc();
         if (!jpeg) {
             warn_noalloc();
@@ -159,7 +170,7 @@ enable_bootsplash(void)
             goto done;
         }
         jpeg_get_size(jpeg, &width, &height);
-    } else {
+    } else if (type == SPLASH_BMP) {
         bmp = bmp_alloc();
         if (!bmp) {
             warn_noalloc();
@@ -173,16 +184,30 @@ enable_bootsplash(void)
             goto done;
         }
         bmp_get_info(bmp, &width, &height, &bpp_require);
+    } else {
+        pcx = pcx_alloc();
+        if (!pcx) {
+            warn_noalloc();
+            goto done;
+        }
+        /* Parse pcx and get image size. */
+        dprintf(5, "Decoding bootsplash.pcx\n");
+        ret = pcx_decode(pcx, filedata, filesize);
+        if (ret) {
+            dprintf(1, "pcx_decode failed with return code %d...\n", ret);
+            goto done;
+        }
+        pcx_get_info(pcx, &width, &height);
     }
 
-    // jpeg would use 16 or 24 bpp video mode, BMP uses 16/24/32 bpp mode.
+    // JPEG and PCX use 16/24/32 bpp video modes; BMP requests its source bpp.
 
     // Try to find a graphics mode with the corresponding dimensions.
     int videomode = find_videomode(vesa_info, mode_info, width, height,
-                                       bpp_require);
+                                   bpp_require);
     if (videomode < 0) {
         dprintf(1, "failed to find a videomode with %dx%d %dbpp (0=any).\n",
-                    width, height, bpp_require);
+                width, height, bpp_require);
         goto done;
     }
     void *framebuffer = (void *)mode_info->phys_base;
@@ -200,20 +225,28 @@ enable_bootsplash(void)
         goto done;
     }
 
-    if (type == 0) {
+    if (type == SPLASH_JPEG) {
         dprintf(5, "Decompressing bootsplash.jpg\n");
         ret = jpeg_show(jpeg, picture, width, height, depth,
-                            mode_info->bytes_per_scanline);
+                        mode_info->bytes_per_scanline);
         if (ret) {
             dprintf(1, "jpeg_show failed with return code %d...\n", ret);
             goto done;
         }
-    } else {
+    } else if (type == SPLASH_BMP) {
         dprintf(5, "Decompressing bootsplash.bmp\n");
         ret = bmp_show(bmp, picture, width, height, depth,
-                           mode_info->bytes_per_scanline);
+                       mode_info->bytes_per_scanline);
         if (ret) {
             dprintf(1, "bmp_show failed with return code %d...\n", ret);
+            goto done;
+        }
+    } else {
+        dprintf(5, "Decompressing bootsplash.pcx\n");
+        ret = pcx_show(pcx, picture, width, height, depth,
+                       mode_info->bytes_per_scanline);
+        if (ret) {
+            dprintf(1, "pcx_show failed with return code %d...\n", ret);
             goto done;
         }
     }
@@ -242,6 +275,7 @@ done:
     free(mode_info);
     free(jpeg);
     free(bmp);
+    free(pcx);
     return;
 }
 

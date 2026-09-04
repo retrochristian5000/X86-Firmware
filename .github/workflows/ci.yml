@@ -30,6 +30,9 @@ jobs:
             nasm \
             python3
 
+      - name: Run PCX decoder tests
+        run: sh scripts/test-pcx.sh
+
       - name: Build SeaBIOS
         run: make -j2
 
