@@ -31,6 +31,62 @@ call16_int10(struct bregs *br)
     finish_preempt();
 }
 
+static int
+find_videomode(struct vbe_info *vesa_info, struct vbe_mode_info *mode_info
+               , int width, int height, int bpp_req);
+
+static int
+qemu_display_mode(void)
+{
+    u32 width = romfile_loadint("etc/qemu-display-width", 0);
+    u32 height = romfile_loadint("etc/qemu-display-height", 0);
+    u32 depth = romfile_loadint("etc/qemu-display-depth", 0);
+    if (!width || !height || width > 0x7fffffff || height > 0x7fffffff
+        || depth > 0x7fffffff)
+        return -1;
+
+    struct vbe_info *vesa_info = malloc_tmplow(sizeof(*vesa_info));
+    struct vbe_mode_info *mode_info = malloc_tmplow(sizeof(*mode_info));
+    if (!vesa_info || !mode_info) {
+        free(vesa_info);
+        free(mode_info);
+        return -1;
+    }
+
+    memset(vesa_info, 0, sizeof(*vesa_info));
+    vesa_info->signature = VBE2_SIGNATURE;
+    struct bregs br;
+    memset(&br, 0, sizeof(br));
+    br.ax = 0x4f00;
+    br.di = FLATPTR_TO_OFFSET(vesa_info);
+    br.es = FLATPTR_TO_SEG(vesa_info);
+    call16_int10(&br);
+    if (br.ax != 0x4f || vesa_info->signature != VESA_SIGNATURE)
+        goto fail;
+
+    int videomode = find_videomode(vesa_info, mode_info, width, height, depth);
+    if (videomode < 0)
+        goto fail;
+
+    memset(&br, 0, sizeof(br));
+    br.ax = 0x4f02;
+    br.bx = videomode | VBE_MODE_LINEAR_FRAME_BUFFER;
+    call16_int10(&br);
+    if (br.ax != 0x4f)
+        goto fail;
+
+    dprintf(1, "QEMU requested display mode %dx%dx%d enabled\n",
+            width, height, depth);
+    free(vesa_info);
+    free(mode_info);
+    return 0;
+
+fail:
+    free(vesa_info);
+    free(mode_info);
+    return -1;
+}
+
 
 /****************************************************************
  * VGA text / graphics console
@@ -39,13 +95,17 @@ call16_int10(struct bregs *br)
 void
 enable_vga_console(void)
 {
-    dprintf(1, "Turning on vga text mode console\n");
     struct bregs br;
 
-    /* Enable VGA text mode */
-    memset(&br, 0, sizeof(br));
-    br.ax = 0x0003;
-    call16_int10(&br);
+    if (qemu_display_mode() < 0) {
+        dprintf(1, "Turning on vga text mode console\n");
+        /* Enable VGA text mode */
+        memset(&br, 0, sizeof(br));
+        br.ax = 0x0003;
+        call16_int10(&br);
+    } else {
+        dprintf(1, "Turning on QEMU requested graphics console\n");
+    }
 
     // Write to screen.
     printf("SeaBIOS (version %s)\n", VERSION);
