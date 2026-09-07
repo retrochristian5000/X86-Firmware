@@ -33,6 +33,9 @@ jobs:
       - name: Run PCX decoder tests
         run: sh scripts/test-pcx.sh
 
+      - name: Check QEMU display mode handoff
+        run: python3 scripts/test-qemu-display-mode.py
+
       - name: Build SeaBIOS
         run: make -j2
 
