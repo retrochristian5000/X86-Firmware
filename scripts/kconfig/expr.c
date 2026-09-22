@@ -734,29 +734,32 @@ struct expr *expr_transform(struct expr *e)
 		case E_SYMBOL:
 			if (e->left.expr->left.sym == &symbol_yes) {
 				// !'y' -> 'n'
-				tmp = e->left.expr;
-				free(e);
-				e = tmp;
+				struct expr *old = e;
+				e = e->left.expr;
 				e->type = E_SYMBOL;
 				e->left.sym = &symbol_no;
+				if (old != e)
+					free(old);
 				break;
 			}
 			if (e->left.expr->left.sym == &symbol_mod) {
 				// !'m' -> 'm'
-				tmp = e->left.expr;
-				free(e);
-				e = tmp;
+				struct expr *old = e;
+				e = e->left.expr;
 				e->type = E_SYMBOL;
 				e->left.sym = &symbol_mod;
+				if (old != e)
+					free(old);
 				break;
 			}
 			if (e->left.expr->left.sym == &symbol_no) {
 				// !'n' -> 'y'
-				tmp = e->left.expr;
-				free(e);
-				e = tmp;
+				struct expr *old = e;
+				e = e->left.expr;
 				e->type = E_SYMBOL;
 				e->left.sym = &symbol_yes;
+				if (old != e)
+					free(old);
 				break;
 			}
 			break;
