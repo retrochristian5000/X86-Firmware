@@ -472,8 +472,10 @@ nvme_bounce_xfer(struct nvme_namespace *ns, u64 lba, void *buf, u16 count,
 
     int res = nvme_io_xfer(ns, lba, nvme_dma_buffer, NULL, blocks, write);
 
-    if (!write && res >= 0)
-        memcpy(buf, nvme_dma_buffer, (size_t)res * (size_t)ns->block_size);
+    if (!write && res >= 0) {
+        size_t copy_len = ((size_t)res) * ((size_t)ns->block_size);
+        memcpy(buf, nvme_dma_buffer, copy_len);
+    }
 
     return res;
 }
