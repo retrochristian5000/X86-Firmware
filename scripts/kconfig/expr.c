@@ -706,13 +706,16 @@ struct expr *expr_transform(struct expr *e)
 			e = expr_transform(e);
 			break;
 		case E_EQUAL:
-		case E_UNEQUAL:
+		case E_UNEQUAL: {
+			enum expr_type new_type;
 			// !a='x' -> a!='x'
 			tmp = e->left.expr;
+			new_type = (tmp->type == E_EQUAL) ? E_UNEQUAL : E_EQUAL;
 			free(e);
 			e = tmp;
-			e->type = e->type == E_EQUAL ? E_UNEQUAL : E_EQUAL;
+			e->type = new_type;
 			break;
+		}
 		case E_OR:
 			// !(a || b) -> !a && !b
 			tmp = e->left.expr;
