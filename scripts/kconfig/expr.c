@@ -708,12 +708,13 @@ struct expr *expr_transform(struct expr *e)
 		case E_EQUAL:
 		case E_UNEQUAL: {
 			enum expr_type new_type;
+			struct expr *new_e;
 			// !a='x' -> a!='x'
-			tmp = e->left.expr;
-			new_type = (tmp->type == E_EQUAL) ? E_UNEQUAL : E_EQUAL;
+			new_e = e->left.expr;
+			new_type = (new_e->type == E_EQUAL) ? E_UNEQUAL : E_EQUAL;
+			new_e->type = new_type;
 			free(e);
-			e = tmp;
-			e->type = new_type;
+			e = new_e;
 			break;
 		}
 		case E_OR:
