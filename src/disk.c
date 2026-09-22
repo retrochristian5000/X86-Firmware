@@ -263,7 +263,7 @@ disk_1305(struct bregs *regs, struct drive_s *drive_fl)
     struct disk_op_s dop;
     dop.drive_fl = drive_fl;
     dop.command = CMD_FORMAT;
-    dop.lba = (((u32)cylinder * (u32)nlh) + (u32)head) * (u32)nls;
+    dop.lba = (((u64)cylinder * (u64)nlh) + (u64)head) * (u64)nls;
     dop.count = count;
     dop.buf_fl = MAKE_FLATPTR(regs->es, regs->bx);
     int status = send_disk_op(&dop);
