@@ -27,6 +27,9 @@ STRIP=$(CROSS_PREFIX)strip
 PYTHON?=python3
 CPP=cpp
 LD32BIT_FLAG:=-melf_i386
+# The firmware and its intermediate ELF objects never execute code on a stack.
+# Preserve the fixed ROM load layout; this only controls ELF stack metadata.
+LD_NOEXECSTACK:=-z noexecstack
 
 # Source files
 SRCBOTH=misc.c stacks.c output.c string.c block.c cdrom.c disk.c	\
@@ -189,15 +192,15 @@ $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds $(OUT)code32flat.o $(OUT)code
 
 $(OUT)rom16.o: $(OUT)code16.o $(OUT)romlayout16.lds
 	@echo "  Linking $@"
-	$(Q)$(LD) -e 0 -T $(OUT)romlayout16.lds $< -o $@
+	$(Q)$(LD) $(LD_NOEXECSTACK) -e 0 -T $(OUT)romlayout16.lds $< -o $@
 
 $(OUT)rom32seg.o: $(OUT)code32seg.o $(OUT)romlayout32seg.lds
 	@echo "  Linking $@"
-	$(Q)$(LD) -e 0 -T $(OUT)romlayout32seg.lds $< -o $@
+	$(Q)$(LD) $(LD_NOEXECSTACK) -e 0 -T $(OUT)romlayout32seg.lds $< -o $@
 
 $(OUT)rom.o: $(OUT)rom16.noexec.o $(OUT)rom32seg.noexec.o $(OUT)code32flat.o $(OUT)romlayout32flat.lds
 	@echo "  Linking $@"
-	$(Q)$(LD) -N -T $(OUT)romlayout32flat.lds $(OUT)rom16.noexec.o $(OUT)rom32seg.noexec.o $(OUT)code32flat.o -o $@
+	$(Q)$(LD) $(LD_NOEXECSTACK) -N -T $(OUT)romlayout32flat.lds $(OUT)rom16.noexec.o $(OUT)rom32seg.noexec.o $(OUT)code32flat.o -o $@
 
 $(OUT)bios.bin.prep: $(OUT)rom.o scripts/checkrom.py
 	@echo "  Prepping $@"
@@ -248,7 +251,7 @@ $(OUT)vgarom.o: $(OUT)vgaccode16.o $(OUT)vgaentry.o $(OUT)vgasrc/vgalayout.lds v
 	@echo "  Linking $@"
 	$(Q)$(PYTHON) ./scripts/buildversion.py -e "$(EXTRAVERSION)" -t "$(CC);$(AS);$(LD);$(OBJCOPY);$(OBJDUMP);$(STRIP)" $(OUT)autovgaversion.h
 	$(Q)$(CC) $(CFLAGS16) -c vgasrc/vgaversion.c -o $(OUT)vgaversion.o
-	$(Q)$(LD) --gc-sections -T $(OUT)vgasrc/vgalayout.lds $(OUT)vgaccode16.o $(OUT)vgaentry.o $(OUT)vgaversion.o -o $@
+	$(Q)$(LD) $(LD_NOEXECSTACK) --gc-sections -T $(OUT)vgasrc/vgalayout.lds $(OUT)vgaccode16.o $(OUT)vgaentry.o $(OUT)vgaversion.o -o $@
 
 $(OUT)vgabios.bin.raw: $(OUT)vgarom.o
 	@echo "  Extracting binary $@"

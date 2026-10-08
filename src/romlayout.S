@@ -695,4 +695,7 @@ reset_vector:
 
         // 0xffff - BiosChecksum in misc.c
 
+        // Bare-metal BIOS uses no executable ELF stack.  Mark the assembler
+        // input explicitly so GNU ld need not infer one from missing metadata.
+        .section .note.GNU-stack,"",@progbits
         .end
