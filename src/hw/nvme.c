@@ -226,14 +226,17 @@ nvme_admin_identify(struct nvme_ctrl *ctrl, u8 cns, u32 nsid)
 static struct nvme_identify_ctrl *
 nvme_admin_identify_ctrl(struct nvme_ctrl *ctrl)
 {
-    return &nvme_admin_identify(ctrl, NVME_ADMIN_IDENTIFY_CNS_ID_CTRL, 0)->ctrl;
+    union nvme_identify *identify =
+        nvme_admin_identify(ctrl, NVME_ADMIN_IDENTIFY_CNS_ID_CTRL, 0);
+    return identify ? &identify->ctrl : NULL;
 }
 
 static struct nvme_identify_ns *
 nvme_admin_identify_ns(struct nvme_ctrl *ctrl, u32 ns_id)
 {
-    return &nvme_admin_identify(ctrl, NVME_ADMIN_IDENTIFY_CNS_ID_NS,
-                                ns_id)->ns;
+    union nvme_identify *identify =
+        nvme_admin_identify(ctrl, NVME_ADMIN_IDENTIFY_CNS_ID_NS, ns_id);
+    return identify ? &identify->ns : NULL;
 }
 
 static void
