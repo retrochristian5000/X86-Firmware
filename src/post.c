@@ -220,10 +220,10 @@ maininit(void)
     platform_hardware_setup();
 
     // Leave normal boots untouched: request timings explicitly through QEMU
-    // with -fw_cfg name=opt/whp/post-timing,string=1.  The file's presence,
+    // with -fw_cfg name=opt/org.seabios/whp-post-timing,string=1.  The file's presence,
     // rather than its contents, enables the trace.
     int post_timing = CONFIG_DEBUG_LEVEL
-                      && romfile_find("opt/whp/post-timing") != NULL;
+                      && romfile_find("opt/org.seabios/whp-post-timing") != NULL;
     u32 post_last = post_timing ? timer_calc(0) : 0;
 
     // Start hardware initialization (if threads allowed during optionroms)
