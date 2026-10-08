@@ -35,15 +35,17 @@ get_multiboot_info(void)
 // i8259 can be programmed correctly while IRQ0/IRQ1 never reach SeaBIOS.  The
 // normal QEMU path repairs this in smp_scan(); do the equivalent here for a
 // Multiboot handoff before threads and keyboard hardware are enabled.
-#define MSR_IA32_APIC_BASE          0x01b
+// This file is also textually included in SeaBIOS's whole-program build.
+// Keep the register offsets distinct from smp.c's memory-mapped APIC pointers.
+#define MULTIBOOT_MSR_IA32_APIC_BASE          0x01b
 #define MSR_IA32_APICBASE_EXTD      (1ULL << 10)
 #define MSR_IA32_APICBASE_ENABLE    (1ULL << 11)
 #define MSR_X2APIC_SVR              0x80f
 #define MSR_X2APIC_LVT_LINT0        0x835
 #define MSR_X2APIC_LVT_LINT1        0x836
-#define APIC_SVR                    0x0f0
-#define APIC_LINT0                  0x350
-#define APIC_LINT1                  0x360
+#define MULTIBOOT_APIC_SVR_OFFSET                    0x0f0
+#define MULTIBOOT_APIC_LINT0_OFFSET                  0x350
+#define MULTIBOOT_APIC_LINT1_OFFSET                  0x360
 #define APIC_SVR_ENABLE             0x0100
 #define APIC_LINT0_EXTINT           0x8700
 #define APIC_LINT1_NMI              0x8400
@@ -59,7 +61,7 @@ multiboot_setup_legacy_irqs(void)
     if (!(features & CPUID_APIC) || !(features & CPUID_MSR))
         return;
 
-    u64 apic_base = rdmsr(MSR_IA32_APIC_BASE);
+    u64 apic_base = rdmsr(MULTIBOOT_MSR_IA32_APIC_BASE);
     if (!(apic_base & MSR_IA32_APICBASE_ENABLE)) {
         // With the local APIC disabled, the legacy PIC can signal INTR
         // directly and no virtual-wire repair is needed.
@@ -76,10 +78,10 @@ multiboot_setup_legacy_irqs(void)
     }
 
     u8 *base = (void *)(u32)(apic_base & 0xfffff000ULL);
-    u32 svr = readl(base + APIC_SVR);
-    writel(base + APIC_SVR, svr | APIC_SVR_ENABLE);
-    writel(base + APIC_LINT0, APIC_LINT0_EXTINT);
-    writel(base + APIC_LINT1, APIC_LINT1_NMI);
+    u32 svr = readl(base + MULTIBOOT_APIC_SVR_OFFSET);
+    writel(base + MULTIBOOT_APIC_SVR_OFFSET, svr | APIC_SVR_ENABLE);
+    writel(base + MULTIBOOT_APIC_LINT0_OFFSET, APIC_LINT0_EXTINT);
+    writel(base + MULTIBOOT_APIC_LINT1_OFFSET, APIC_LINT1_NMI);
     dprintf(1, "Multiboot: restored xAPIC legacy IRQ virtual wire.\n");
 }
 
@@ -228,7 +230,7 @@ mbfs_copyfile(struct romfile_s *file, void *dst, u32 maxlen)
 // understands.  0x500 is outside the IVT/BDA and is only populated after all
 // Multiboot modules have been copied away from the bootloader handoff data.
 #define MULTIBOOT_CB_TABLE_ADDR 0x500
-#define CB_SIGNATURE 0x4f49424c // "LBIO"
+#define MULTIBOOT_CB_SIGNATURE 0x4f49424c // "LBIO"
 #define CB_TAG_FRAMEBUFFER 0x0012
 
 struct multiboot_cb_header {
@@ -327,7 +329,7 @@ multiboot_prepare_vga(struct multiboot_info *mbi)
 
     struct multiboot_cb_table *table = (void *)MULTIBOOT_CB_TABLE_ADDR;
     memset(table, 0, sizeof(*table));
-    table->header.signature = CB_SIGNATURE;
+    table->header.signature = MULTIBOOT_CB_SIGNATURE;
     table->header.header_bytes = sizeof(table->header);
     table->header.table_bytes = sizeof(table->framebuffer);
     table->header.table_entries = 1;
