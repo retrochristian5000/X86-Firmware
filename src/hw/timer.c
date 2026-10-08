@@ -196,6 +196,13 @@ timer_calc(u32 msecs)
 {
     return timer_read() + (GET_GLOBAL(TimerKHz) * msecs);
 }
+
+// Convert deltas from timer_calc(0) to milliseconds, not PIT IRQ ticks.
+u32
+timer_ticks_to_ms(u32 ticks)
+{
+    return ticks / GET_GLOBAL(TimerKHz);
+}
 u32
 timer_calc_usec(u32 usecs)
 {

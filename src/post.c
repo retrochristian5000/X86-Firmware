@@ -20,6 +20,7 @@
 #include "malloc.h" // malloc_init
 #include "memmap.h" // SYMBOL
 #include "output.h" // dprintf
+#include "romfile.h" // romfile_find
 #include "string.h" // memset
 #include "util.h" // kbd_init
 #include "tcgbios.h" // tpm_*
@@ -195,6 +196,19 @@ startBoot(void)
     call16_int(0x19, &br);
 }
 
+// Emit opt-in elapsed POST timings.  The firmware's calibrated timer uses
+// ticks per millisecond; IRQ tick conversion is not appropriate here.
+static void
+post_timing_log(int enabled, u32 *last, const char *phase)
+{
+    if (!enabled)
+        return;
+    u32 now = timer_calc(0);
+    u32 elapsed = timer_ticks_to_ms(now - *last);
+    *last = now;
+    dprintf(1, "POST timing: %s: %u ms\\n", phase, elapsed);
+}
+
 // Main setup code.
 static void
 maininit(void)
@@ -202,8 +216,15 @@ maininit(void)
     // Initialize internal interfaces.
     interface_init();
 
-    // Setup platform devices.
+    // Setup platform devices (including the calibrated firmware timer).
     platform_hardware_setup();
+
+    // Leave normal boots untouched: request timings explicitly through QEMU
+    // with -fw_cfg name=opt/whp/post-timing,string=1.  The file's presence,
+    // rather than its contents, enables the trace.
+    int post_timing = CONFIG_DEBUG_LEVEL
+                      && romfile_find("opt/whp/post-timing") != NULL;
+    u32 post_last = post_timing ? timer_calc(0) : 0;
 
     // Start hardware initialization (if threads allowed during optionroms)
     if (threads_during_optionroms())
@@ -213,22 +234,28 @@ maininit(void)
     vgarom_setup();
     sercon_setup();
     enable_vga_console();
+    post_timing_log(post_timing, &post_last, "video / early hardware");
 
     // Do hardware initialization (if running synchronously)
     if (!threads_during_optionroms()) {
         device_hardware_setup();
         wait_threads();
     }
+    post_timing_log(post_timing, &post_last, "device setup");
 
     // Run option roms
     optionrom_setup();
+    post_timing_log(post_timing, &post_last, "option ROMs");
 
     // Allow user to modify overall boot order.
     interactive_bootmenu();
+    post_timing_log(post_timing, &post_last, "boot menu");
     wait_threads();
+    post_timing_log(post_timing, &post_last, "device completion");
 
     // Prepare for boot.
     prepareboot();
+    post_timing_log(post_timing, &post_last, "boot preparation");
 
     // Write protect bios memory.
     make_bios_readonly();
