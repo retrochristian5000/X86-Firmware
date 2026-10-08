@@ -869,11 +869,12 @@ static int pci_bridge_has_region(struct pci_device *pci,
 
 static int pci_bios_check_devices(struct pci_bus *busses)
 {
-    dprintf(1, "PCI: check devices\n");
-
-    // Calculate resources needed for regular (non-bus) devices.
+    // Size BARs before assigning addresses.  The mapping pass later uses
+    // these entries, so this is not a second enumeration of PCI devices.
+    int devices = 0, sized_bars = 0;
     struct pci_device *pci;
     foreachpci(pci) {
+        devices++;
         if (pci->class == PCI_CLASS_BRIDGE_PCI)
             busses[pci->secondary_bus].bus_dev = pci;
 
@@ -893,6 +894,7 @@ static int pci_bios_check_devices(struct pci_bus *busses)
             pci_bios_get_bar(pci, i, &type, &size, &is64);
             if (size == 0)
                 continue;
+            sized_bars++;
 
             if (type != PCI_REGION_TYPE_IO && size < PCI_DEVICE_MEM_MIN)
                 size = PCI_DEVICE_MEM_MIN;
@@ -999,6 +1001,8 @@ static int pci_bios_check_devices(struct pci_bus *busses)
                       region_type_name[entry->type]);
         }
     }
+    dprintf(1, "PCI: resource sizing complete: %d devices, %d BARs\n",
+            devices, sized_bars);
     return 0;
 }
 
@@ -1226,7 +1230,7 @@ pci_setup(void)
     pcimem_start = RamSize;
     pci_bios_init_platform();
 
-    dprintf(1, "=== PCI new allocation pass #1 ===\n");
+    dprintf(1, "=== PCI resource sizing pass #1 ===\n");
     struct pci_bus *busses = malloc_tmp(sizeof(*busses) * (MaxPCIBus + 1));
     if (!busses) {
         warn_noalloc();
@@ -1236,7 +1240,7 @@ pci_setup(void)
     if (pci_bios_check_devices(busses))
         return;
 
-    dprintf(1, "=== PCI new allocation pass #2 ===\n");
+    dprintf(1, "=== PCI address assignment pass #2 ===\n");
     pci_bios_map_devices(busses);
 
     pci_bios_init_devices();
