@@ -206,7 +206,7 @@ post_timing_log(int enabled, u32 *last, const char *phase)
     u32 now = timer_calc(0);
     u32 elapsed = timer_ticks_to_ms(now - *last);
     *last = now;
-    dprintf(1, "POST timing: %s: %u ms\\n", phase, elapsed);
+    dprintf(1, "POST timing: %s: %u ms\n", phase, elapsed);
 }
 
 // Main setup code.
