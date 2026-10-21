@@ -32,6 +32,7 @@ assert 'Press configured key for boot menu.' in boot
 assert 0x43 - 0x3A == 9
 assert "name=etc/boot-menu-key,string=C" in docs
 assert "string=0x43" in docs
+assert r"printf '\\103' > f9-boot-key.bin" in docs
 assert "not BIOS Setup" in docs
 
 print("SeaBIOS F9 boot-menu key and prompt: source contract verified")

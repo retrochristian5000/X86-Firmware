@@ -246,10 +246,10 @@ qemu-system-i386 -machine pc -fw_cfg name=etc/boot-menu-key,string=C
 The ASCII byte `C` is `0x43`, the unshifted F9 BIOS scan code. QEMU's
 `string=` option writes the bytes of its argument, not a parsed integer:
 `string=0x43` **does not** select F9. For clarity and portability, the
-equivalent binary-file form uses a single byte:
+equivalent portable POSIX shell form uses octal 103 to write a single byte:
 
 ```sh
-printf '\\x43' > f9-boot-key.bin
+printf '\103' > f9-boot-key.bin
 qemu-system-i386 -machine pc -fw_cfg name=etc/boot-menu-key,file=f9-boot-key.bin
 ```
 
