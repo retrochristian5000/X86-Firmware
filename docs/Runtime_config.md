@@ -191,3 +191,30 @@ There are several additional configuration options available in the
 | threads             | By default, SeaBIOS will parallelize hardware initialization during bootup to reduce boot time. Multiple hardware devices can be initialized in parallel between vga initialization and option rom initialization. One can set this file to a value of zero to force hardware initialization to run serially. Alternatively, one can set this file to 2 to enable early hardware initialization that runs in parallel with vga, option rom initialization, and the boot menu.
 | sdcard*             | One may create one or more files with an "sdcard" prefix (eg, "etc/sdcard0") with the physical memory address of an SDHCI controller (one memory address per file).  This may be useful for SDHCI controllers that do not appear as PCI devices, but are mapped to a consistent memory address. If this option is used then SeaBIOS will not scan for PCI SHDCI controllers.
 | usb-time-sigatt     | The USB2 specification requires devices to signal that they are attached within 100ms of the USB port being powered on. Some USB devices are known to require more time. Prior to receiving an attachment signal there is no way to know if a USB port is empty or if it has a device attached. One may specify an amount of time here (in milliseconds, default 100) to wait for a USB device attachment signal. Increasing this value will also increase the overall machine bootup time.
+
+Experimental AMIBIOS Hi-Flex CMOS overlay
+=========================================
+
+The WHP SeaBIOS fork has an *opt-in*, partial 1993 AMIBIOS Hi-Flex CMOS
+compatibility overlay. With QEMU, enable it using:
+
+```
+-fw_cfg name=opt/org.seabios/ami-hiflex-cmos,string=1
+```
+
+The overlay initializes the standard and extended additive CMOS checksums
+(2Eh/2Fh and 3Eh/3Fh), reserves the unknown chipset byte 36h as zero,
+and selects the documented setup color at 37h. It is disabled by default.
+
+**Important:** The Hi-Flex AMIBIOS 34h-35h ROM-shadow and numeric-processor
+settings conflict with QEMU's existing 34h-35h extended-RAM-size bytes.
+SeaBIOS must preserve QEMU's RAM-size data even when this overlay is enabled.
+Bytes 38h-3Dh are likewise owned by existing QEMU boot-order and disk-translation
+settings and are never cleared by this overlay. The extended checksum therefore
+covers the *preserved QEMU values*, not a fully authentic AMIBIOS configuration.
+
+This is not AMIBIOS ROM emulation. It does not provide AMI password checking,
+ROM shadow control, vendor-specific INT services, POST checkpoints, or an
+AMIBIOS setup UI. Do not use this mode as a substitute for a machine-specific
+AMI BIOS/CMOS implementation.
+

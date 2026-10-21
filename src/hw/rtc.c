@@ -43,16 +43,16 @@ rtc_mask(u8 index, u8 off, u8 on)
 /*
  * AMI Hi-Flex CMOS compatibility profile (1993-era layout).
  *
- * The profile is deliberately opt-in via fw_cfg/CBFS so the normal SeaBIOS
- * CMOS ABI remains unchanged.  QEMU currently uses some bytes in the AMI
- * password area (38h-3Dh) for boot order and disk translation.  Preserve
- * those bytes: with password checking disabled in 34h their payload is inert
- * to the AMI layout, while SeaBIOS can continue using its existing ABI.
+ * This experimental, opt-in overlay cannot provide a complete AMI CMOS
+ * layout: QEMU owns 34h-35h (extended memory size), while AMI Hi-Flex
+ * assigns shadowing controls there.  Never overwrite QEMU's RAM metadata.
+ * QEMU also uses 38h-3Dh for boot order and disk translation.  Preserve
+ * those bytes, too.  No AMI password or shadowing behavior is emulated.
  */
 #define CMOS_AMI_STD_CHECKSUM_HI  0x2e
 #define CMOS_AMI_STD_CHECKSUM_LO  0x2f
-#define CMOS_AMI_SHADOW_C_D       0x34
-#define CMOS_AMI_SHADOW_E_F       0x35
+/* QEMU owns 34h/35h as extended-memory size; do not write either byte. */
+#define CMOS_AMI_EXT_CHECKSUM_FIRST 0x34
 #define CMOS_AMI_CHIPSET          0x36
 #define CMOS_AMI_PASSWORD_COLOR   0x37
 #define CMOS_AMI_PASSWORD_END     0x3d
@@ -82,14 +82,12 @@ ami_hiflex_cmos_setup(void)
     rtc_write(CMOS_AMI_STD_CHECKSUM_LO, sum);
 
     /*
-     * Start conservatively: password, virus protection, and ROM shadowing
-     * disabled until the corresponding chipset behavior is modeled.
+     * Do not program the AMI shadowing/password bits at 34h and 35h.
+     * Those offsets are QEMU's extended-memory-size bytes, and SeaBIOS
+     * uses them for RAM detection when early E820 probing fails.
+     * Shadowing and numeric-processor-test settings are intentionally
+     * unavailable in this partial Hi-Flex overlay.
      */
-    rtc_write(CMOS_AMI_SHADOW_C_D, 0x00);
-
-    /* Enable the AMI numeric-processor test when CMOS reports an FPU. */
-    u8 shadow_ef = (rtc_read(CMOS_EQUIPMENT_INFO) & 0x02) ? 0x01 : 0x00;
-    rtc_write(CMOS_AMI_SHADOW_E_F, shadow_ef);
 
     /* Chipset-specific byte is unknown for the generic SeaBIOS profile. */
     rtc_write(CMOS_AMI_CHIPSET, 0x00);
@@ -103,7 +101,7 @@ ami_hiflex_cmos_setup(void)
      * checking above is disabled.  Include the preserved bytes in the AMI
      * extended additive checksum as the real firmware would.
      */
-    sum = rtc_checksum_range(CMOS_AMI_SHADOW_C_D, CMOS_AMI_PASSWORD_END);
+    sum = rtc_checksum_range(CMOS_AMI_EXT_CHECKSUM_FIRST, CMOS_AMI_PASSWORD_END);
     rtc_write(CMOS_AMI_EXT_CHECKSUM_HI, sum >> 8);
     rtc_write(CMOS_AMI_EXT_CHECKSUM_LO, sum);
 }
