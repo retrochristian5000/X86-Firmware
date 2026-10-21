@@ -17,6 +17,7 @@
 #define SEROFF_DLH     1
 #define SEROFF_IIR     2
 #define SEROFF_LCR     3
+#define SEROFF_MCR     4
 #define SEROFF_LSR     5
 #define SEROFF_MSR     6
 

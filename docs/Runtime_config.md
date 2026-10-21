@@ -218,3 +218,19 @@ ROM shadow control, vendor-specific INT services, POST checkpoints, or an
 AMIBIOS setup UI. Do not use this mode as a substitute for a machine-specific
 AMI BIOS/CMOS implementation.
 
+PS/2 extended serial INT 14h
+============================
+
+SeaBIOS implements PS/2-compatible INT 14h/AH=05h extended communications
+port control for an already-detected COM port (DX = 0..3). AL=00h reads the
+UART modem-control register (MCR); AL=01h writes BL bits 0..4 to the MCR.
+Both operations return the MCR in BL, line status in AH, and modem status
+in AL. Unsupported subfunctions and absent COM ports have no hardware
+side effects. This service is also documented for 1993-era AMIBIOS, but
+it is **not** an AMI-exclusive vendor call, and it does not change the
+firmware's identity or require enabling the experimental AMI CMOS overlay.
+
+INT 14h/AH=04h extended port initialization and AMI-specific CPU-speed,
+cache-controller, and EISA functions require their own compatibility
+verification; this serial extension does not claim to implement them.
+

@@ -156,6 +156,31 @@ handle_1403(struct bregs *regs)
     set_success(regs);
 }
 
+// PS/2 and 1993-era AMIBIOS extended modem-control register access.
+static void
+handle_1405(struct bregs *regs)
+{
+    u16 addr = getComAddr(regs);
+    if (!addr)
+        return;
+
+    switch (regs->al) {
+    case 0x00: // Read MCR
+        break;
+    case 0x01: // Write MCR; reserved bits 5..7 remain clear.
+        outb(regs->bl & 0x1f, addr+SEROFF_MCR);
+        break;
+    default:
+        set_unimplemented(regs);
+        return;
+    }
+
+    regs->bl = inb(addr+SEROFF_MCR) & 0x1f;
+    regs->ah = inb(addr+SEROFF_LSR);
+    regs->al = inb(addr+SEROFF_MSR);
+    set_success(regs);
+}
+
 static void
 handle_14XX(struct bregs *regs)
 {
@@ -177,6 +202,7 @@ handle_14(struct bregs *regs)
     case 0x01: handle_1401(regs); break;
     case 0x02: handle_1402(regs); break;
     case 0x03: handle_1403(regs); break;
+    case 0x05: handle_1405(regs); break;
     default:   handle_14XX(regs); break;
     }
 }
