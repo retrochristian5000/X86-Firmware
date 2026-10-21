@@ -716,7 +716,20 @@ interactive_bootmenu(void)
             ;
 
         char *bootmsg = romfile_loadfile("etc/boot-menu-message", NULL);
-        printf("%s", bootmsg ?: "\nPress ESC for boot menu.\n\n");
+        if (bootmsg) {
+            printf("%s", bootmsg);
+        } else if (menukey >= 0x3b && menukey <= 0x44) {
+            // F1 through F10 use contiguous BIOS scan codes.
+            printf("\nPress F%d for boot menu.\n\n", menukey - 0x3a);
+        } else if (menukey == 0x85 || menukey == 0x86) {
+            // F11 and F12 use extended BIOS scan codes.
+            printf("\nPress F%d for boot menu.\n\n", menukey - 0x85 + 11);
+        } else if (menukey == 1) {
+            printf("\nPress ESC for boot menu.\n\n");
+        } else {
+            // Do not falsely advertise ESC for another configured key.
+            printf("\nPress configured key for boot menu.\n\n");
+        }
         free(bootmsg);
 
         enable_bootsplash();

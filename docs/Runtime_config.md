@@ -174,8 +174,8 @@ There are several additional configuration options available in the
 | Filename            | Description
 |---------------------|---------------------------------------------------
 | show-boot-menu      | Controls the display of the boot menu. Valid values are 0: Disable the boot menu, 1: Display boot menu unconditionally, 2: Skip boot menu if only one device is present. The default is 1.
-| boot-menu-message   | Customize the text boot menu message. Normally, when in text mode SeaBIOS will report the string "\\nPress ESC for boot menu.\\n\\n". This field allows the string to be changed. (This is a string field, and is added as a file containing the raw string.)
-| boot-menu-key       | Controls which key activates the boot menu. The value stored is the DOS scan code (eg, 0x86 for F12, 0x01 for Esc). If this field is set, be sure to also customize the **boot-menu-message** field above.
+| boot-menu-message   | Customize the text boot menu message. When omitted, SeaBIOS names the selected Esc or F1-F12 key automatically (Esc is the default). For other scan codes, it displays a generic prompt. This field overrides the generated prompt.
+| boot-menu-key       | Controls which key activates the **boot menu**, not BIOS Setup. The value is the binary BIOS scan code (e.g. 0x43 for F9, 0x86 for F12, 0x01 for Esc), not the literal text "0x43". See the F9 example below.
 | boot-menu-wait      | Amount of time (in milliseconds) to wait at the boot menu prompt before selecting the default boot. Set to a negative number such as -1 to force the display of the boot menu.
 | boot-fail-wait      | If no boot devices are found SeaBIOS will reboot after 60 seconds. Set this to the amount of time (in milliseconds) to customize the reboot delay or set to -1 to disable rebooting when no boot devices are found
 | extra-pci-roots     | If the target machine has multiple independent root buses set this to a positive value. The SeaBIOS PCI probe will then search for the given number of extra root buses.
@@ -233,4 +233,32 @@ firmware's identity or require enabling the experimental AMI CMOS overlay.
 INT 14h/AH=04h extended port initialization and AMI-specific CPU-speed,
 cache-controller, and EISA functions require their own compatibility
 verification; this serial extension does not claim to implement them.
+
+F9 boot-menu hotkey (not BIOS Setup)
+====================================
+
+QEMU can configure F9 to open the existing SeaBIOS **boot-device menu**:
+
+```sh
+qemu-system-i386 -machine pc -fw_cfg name=etc/boot-menu-key,string=C
+```
+
+The ASCII byte `C` is `0x43`, the unshifted F9 BIOS scan code. QEMU's
+`string=` option writes the bytes of its argument, not a parsed integer:
+`string=0x43` **does not** select F9. For clarity and portability, the
+equivalent binary-file form uses a single byte:
+
+```sh
+printf '\\x43' > f9-boot-key.bin
+qemu-system-i386 -machine pc -fw_cfg name=etc/boot-menu-key,file=f9-boot-key.bin
+```
+
+When there is no `etc/boot-menu-message` override, the prompt now names F9
+rather than incorrectly advertising ESC. ESC remains the default activation
+key when `etc/boot-menu-key` is absent; existing custom menu messages win.
+The boot-menu wait window still applies.
+
+SeaBIOS does not implement an AMIBIOS Setup program. On various physical PCs,
+F9 can choose boot devices or restore defaults *within* a vendor's setup UI.
+Do not interpret this optional SeaBIOS boot-menu binding as those capabilities.
 
