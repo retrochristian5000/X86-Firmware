@@ -116,6 +116,7 @@ interface_init(void)
 
     // Other interfaces
     boot_init();
+    apm_setup();
     bios32_init();
     pmm_init();
     pnp_init();

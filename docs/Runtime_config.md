@@ -218,6 +218,40 @@ ROM shadow control, vendor-specific INT services, POST checkpoints, or an
 AMIBIOS setup UI. Do not use this mode as a substitute for a machine-specific
 AMI BIOS/CMOS implementation.
 
+Laptop APM 1.2 POST power snapshot (experimental)
+==================================================
+The existing INT 15h/AX=530Ah desktop default reports AC power and no battery.
+A future laptop model or compatibility test can supply a *static POST snapshot*
+over `-fw_cfg name=opt/org.seabios/whp-laptop-apm,file=...`. The record is
+exactly eight binary bytes (not ASCII):
+version=1; AC line BH (0,1,2,FFh); battery BL (0 high,1 low,2 critical,
+3 charging,FFh unknown); battery flags CH (bits 0-3 status, bit 7 no
+system battery, or FFh unknown); percent CL (0-100 or FFh); installed
+battery count (0 or 1); and remaining time DX (little-endian; high bit
+selects minutes, FFFFh unknown).
+
+A deterministic **test fixture** for AC online, charging, 67%, one battery,
+300 minutes remaining can be created by a shell that supports octal escapes:
+
+```sh
+printf '\001\001\003\010\103\001\054\201' > laptop-apm.bin
+qemu-system-i386 -machine pc \
+  -fw_cfg name=opt/org.seabios/whp-laptop-apm,file=laptop-apm.bin
+```
+
+An absent battery requires status FFh, flags 80h, percentage FFh, time FFFFh,
+and count zero. Invalid sizes, versions, reserved flags, mismatched status
+bits, contradictory absence and unsupported multiple-battery counts are
+rejected; desktop defaults remain unchanged. AX=530Ah with a valid record
+supports BX=0001h (system) or BX=8001h (battery 1 if present), rejecting
+other device IDs with AH=09h. AX=5310h/BX=0000h reports the same number
+of battery units in BL, but **no suspend/standby wake capabilities** in CX.
+
+This record is sampled only once at POST. It is **not live** telemetry:
+charge or AC status cannot change without another POST. No laptop, charger,
+battery, lid, PCMCIA controller or suspend mechanism is invented here.
+This feature does not change the separate Dell-style F2/F12 or AMI overlays.
+
 PS/2 extended serial INT 14h
 ============================
 

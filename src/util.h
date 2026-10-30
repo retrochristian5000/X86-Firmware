@@ -5,6 +5,7 @@
 #include "types.h" // u32
 
 // apm.c
+void apm_setup(void);
 void apm_shutdown(void);
 struct bregs;
 void handle_1553(struct bregs *regs);

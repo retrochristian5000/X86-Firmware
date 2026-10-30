@@ -39,6 +39,13 @@ jobs:
       - name: Verify SeaBIOS boot-menu F9 scancode and prompt
         run: python3 scripts/test-boot-menu-f9.py
 
+      - name: Test laptop APM record validator
+        run: |
+          test_bin="$(mktemp)"
+          trap 'rm -f "$test_bin"' EXIT
+          cc -std=gnu11 -Wall -Wextra -Werror -Isrc -o "$test_bin" scripts/test-laptop-apm.c
+          "$test_bin"
+
       - name: Build SeaBIOS
         run: make -j2
 

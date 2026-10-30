@@ -6,13 +6,49 @@
 //
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
+#include "apm-power.h" // apm_power_snapshot
 #include "biosvar.h" // GET_GLOBAL
 #include "bregs.h" // struct bregs
 #include "config.h" // CONFIG_*
 #include "output.h" // dprintf
+#if !MODESEGMENT
+#include "romfile.h" // romfile_find
+#endif
 #include "stacks.h" // yield_toirq
 #include "util.h" // apm_shutdown
 #include "x86.h" // outb
+
+/*
+ * Cached at POST in the f-segment, readable from both real-mode INT 15h
+ * and segmented APM entry points.  This is not live battery telemetry.
+ */
+struct apm_power_snapshot ApmPowerSnapshot VARFSEG;
+
+#if !MODESEGMENT
+void
+apm_setup(void)
+{
+    ApmPowerSnapshot.version = 0;
+    if (!CONFIG_APMBIOS)
+        return;
+    struct romfile_s *file = romfile_find(WHP_APM_POWER_FILE);
+    if (!file)
+        return;
+    if (file->size != sizeof(struct apm_power_snapshot)) {
+        dprintf(1, "Ignoring laptop APM record: wrong size %u\n", file->size);
+        return;
+    }
+    struct apm_power_snapshot snapshot;
+    if (file->copy(file, &snapshot, sizeof(snapshot)) < 0
+        || !apm_power_valid(&snapshot)) {
+        dprintf(1, "Ignoring invalid laptop APM power snapshot\n");
+        return;
+    }
+    ApmPowerSnapshot = snapshot;
+    dprintf(1, "Laptop APM POST snapshot enabled (%u battery units)\n",
+            snapshot.units);
+}
+#endif
 
 // APM installation check
 static void
@@ -126,10 +162,28 @@ handle_155308(struct bregs *regs)
     set_success(regs);
 }
 
-// Get Power Status
+// Get Power Status.  Preserve the desktop default absent a validated record.
 static void
 handle_15530a(struct bregs *regs)
 {
+    if (GET_GLOBAL(ApmPowerSnapshot.version) == WHP_APM_POWER_VERSION) {
+        u16 device = regs->bx;
+        u8 units = GET_GLOBAL(ApmPowerSnapshot.units);
+        if ((device != 1 && device != 0x8001)
+            || (device == 0x8001 && !units)) {
+            set_code_invalid_silent(regs, 0x09);
+            return;
+        }
+        regs->bh = GET_GLOBAL(ApmPowerSnapshot.ac_line);
+        regs->bl = GET_GLOBAL(ApmPowerSnapshot.battery_status);
+        regs->ch = GET_GLOBAL(ApmPowerSnapshot.battery_flags);
+        regs->cl = GET_GLOBAL(ApmPowerSnapshot.percentage);
+        regs->dx = GET_GLOBAL(ApmPowerSnapshot.time_lo)
+                   | (GET_GLOBAL(ApmPowerSnapshot.time_hi) << 8);
+        regs->si = units;
+        set_success(regs);
+        return;
+    }
     regs->bh = 0x01; // on line
     regs->bl = 0xff; // unknown battery status
     regs->ch = 0x80; // no system battery
@@ -168,7 +222,16 @@ handle_15530f(struct bregs *regs)
 static void
 handle_155310(struct bregs *regs)
 {
-    regs->bl = 0;
+    if (GET_GLOBAL(ApmPowerSnapshot.version) == WHP_APM_POWER_VERSION) {
+        if (regs->bx != 0) {
+            set_code_invalid_silent(regs, 0x09);
+            return;
+        }
+        regs->bl = GET_GLOBAL(ApmPowerSnapshot.units);
+    } else {
+        regs->bl = 0;
+    }
+    // No standby/suspend/wake capability is emulated by this snapshot.
     regs->cx = 0;
     set_success(regs);
 }
