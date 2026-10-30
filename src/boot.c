@@ -682,6 +682,62 @@ get_keystroke(int msec)
 
 #define DEFAULT_BOOTMENU_WAIT 2500
 
+/* Model IDs supplied by the matching QEMU Dell system machines.  A model ID
+ * alone must not change the legacy SeaBIOS boot interface; the optional
+ * POST UI is enabled separately by the user. */
+#define WHP_DELL_MODEL_FILE "opt/org.seabios/whp-dell-model"
+#define WHP_DELL_POST_UI_FILE "opt/org.seabios/whp-dell-post-ui"
+#define WHP_DELL_F2_SCANCODE 0x3c
+#define WHP_DELL_F12_SCANCODE 0x86
+
+/* This is an informational compatibility view, not Dell's proprietary Setup.
+ * It cannot write CMOS, bypass passwords, or claim unsupported hardware. */
+static int
+dell_system_information(u32 model, int menukey)
+{
+    const char *name;
+    const char *eisa_id;
+    switch (model) {
+    case 1:
+        name = "System 425E";
+        eisa_id = "DEL0001";
+        break;
+    case 2:
+        name = "System 433E";
+        eisa_id = "DEL0002";
+        break;
+    case 3:
+        name = "PowerLine Workstation 433DE";
+        eisa_id = "DEL0005";
+        break;
+    default:
+        return 0;
+    }
+
+    printf("\nWHP Dell-style System Information (read-only)\n");
+    printf("Emulated model: Dell %s\n", name);
+    printf("EISA system-board ID: %s\n", eisa_id);
+    printf("Firmware: SeaBIOS %s\n", VERSION);
+    printf("RAM below 4 GiB: %u MiB\n", RamSize / (1024 * 1024));
+    printf("Weitek 4167: %s\n",
+           romfile_loadint("etc/weitek4167", 0) ? "reported" : "not reported");
+    printf("This is not an original Dell BIOS Setup utility.\n");
+    if (menukey == WHP_DELL_F12_SCANCODE)
+        printf("F12: one-time boot menu.  ");
+    printf("ESC/Enter: continue boot.\n");
+
+    for (;;) {
+        int key = get_keystroke_full(1000);
+        if (key < 0)
+            continue;
+        if (key == 0x011b || key == 0x1c0d)
+            return 0;
+        if (menukey == WHP_DELL_F12_SCANCODE
+            && key >> 8 == WHP_DELL_F12_SCANCODE)
+            return 1;
+    }
+}
+
 static const char menuchars[] = {
     '1', '2', '3', '4', '5', '6', '7', '8', '9',
     'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i',
@@ -710,6 +766,12 @@ interactive_bootmenu(void)
 
     int menutime = romfile_loadint("etc/boot-menu-wait", DEFAULT_BOOTMENU_WAIT);
     int menukey = romfile_loadint("etc/boot-menu-key", 1);
+    u32 dell_model = romfile_loadint(WHP_DELL_MODEL_FILE, 0);
+    int dell_ui = dell_model >= 1 && dell_model <= 3
+                  && romfile_loadbool(WHP_DELL_POST_UI_FILE, 0);
+    /* Preserve an explicitly configured menu key, even ESC or F2. */
+    if (dell_ui && !romfile_find("etc/boot-menu-key"))
+        menukey = WHP_DELL_F12_SCANCODE;
     int scan_code;
     if (menutime >= 0) {
         while (get_keystroke(0) >= 0)
@@ -731,10 +793,19 @@ interactive_bootmenu(void)
             printf("\nPress configured key for boot menu.\n\n");
         }
         free(bootmsg);
+        if (dell_ui && menukey != WHP_DELL_F2_SCANCODE)
+            printf("Press F2 for system information (read-only).\n");
 
         enable_bootsplash();
         scan_code = get_keystroke(menutime);
         disable_bootsplash();
+        if (dell_ui && scan_code == WHP_DELL_F2_SCANCODE
+            && menukey != WHP_DELL_F2_SCANCODE) {
+            if (dell_system_information(dell_model, menukey))
+                scan_code = menukey;
+            else
+                return;
+        }
         if (scan_code != menukey)
             return;
     }

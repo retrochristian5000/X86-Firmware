@@ -234,6 +234,44 @@ INT 14h/AH=04h extended port initialization and AMI-specific CPU-speed,
 cache-controller, and EISA functions require their own compatibility
 verification; this serial extension does not claim to implement them.
 
+Optional Dell-style POST controls for WHP Dell machines
+=======================================================
+
+WHP's QEMU Dell System 425E, System 433E and PowerLine Workstation 433DE
+machine types now supply a read-only `opt/org.seabios/whp-dell-model` fw_cfg
+integer (respectively 1, 2 and 3), identifying the actual emulated model.
+The model ID alone **does not** change the BIOS UI. To opt in to the
+*modern Dell-inspired* F2/F12 workflow, boot one of those machines with:
+
+```sh
+qemu-system-i386 -machine dell-system-433de \
+  -fw_cfg name=opt/org.seabios/whp-dell-post-ui,string=1
+```
+
+When the matching model ID and the opt-in Boolean are both present:
+
+* **F12** opens SeaBIOS's existing **one-time** boot-device selection menu.
+  This only changes the current startup selection, not persistent CMOS order.
+* **F2** opens a read-only **System Information** display showing the emulated
+  model/EISA ID, actual SeaBIOS build, reported low RAM and the Weitek
+  coprocessor presence flag. ESC/Enter continues the normal boot; F12 enters
+  the boot-device menu when F12 remains its configured activation key.
+* The existing `etc/boot-menu-key` override takes precedence. Thus a
+  caller who explicitly requests Esc, F9 or F2 as the boot-menu key keeps it.
+  `etc/show-boot-menu=0` still disables this whole interaction.
+* Other QEMU machines and normal Dell machine boot **remain unchanged**.
+  `opt/org.seabios/whp-dell-post-ui` alone does nothing without a valid Dell
+  model ID supplied by the corresponding machine.
+
+**Historical and capability boundary:** the 1990s Dell System 425E/433E and
+PowerLine models are **not assumed to have used modern F2/F12 hotkeys**.
+This is a compatibility convenience, not a reconstruction of their original
+ROM UI or a claim that SeaBIOS runs a genuine Dell BIOS. There is no Dell
+password system, writable CMOS configuration menu, EISA Configuration Utility,
+service-tag programming, or full OEM POST diagnostics. The pre-existing
+experimental AMIBIOS CMOS overlay is a separate opt-in and is not enabled by
+this mode. Never substitute these labels for actual hardware detection.
+
 F9 boot-menu hotkey (not BIOS Setup)
 ====================================
 

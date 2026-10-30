@@ -27,6 +27,22 @@ assert 'printf("%s", bootmsg);' in boot
 assert 'Press ESC for boot menu.' in boot
 assert 'Press configured key for boot menu.' in boot
 
+# Dell-style boot controls are optional: neither the newer F12 convention
+# nor the read-only F2 information view may alter legacy machine defaults.
+assert 'WHP_DELL_MODEL_FILE "opt/org.seabios/whp-dell-model"' in boot
+assert 'WHP_DELL_POST_UI_FILE "opt/org.seabios/whp-dell-post-ui"' in boot
+assert 'WHP_DELL_F2_SCANCODE 0x3c' in boot
+assert 'WHP_DELL_F12_SCANCODE 0x86' in boot
+assert 'romfile_loadbool(WHP_DELL_POST_UI_FILE, 0)' in boot
+assert 'dell_model >= 1 && dell_model <= 3' in boot
+assert '!romfile_find("etc/boot-menu-key")' in boot
+assert 'if (dell_ui && scan_code == WHP_DELL_F2_SCANCODE' in boot
+assert 'if (menukey == WHP_DELL_F12_SCANCODE' in boot
+assert 'This is not an original Dell BIOS Setup utility.' in boot
+assert 'F12 opens SeaBIOS' not in boot
+assert 'opt/org.seabios/whp-dell-post-ui,string=1' in docs
+assert 'a separate opt-in' in docs
+
 # F9: 0x43 - 0x3a == 9; the QEMU string option must carry the *byte*
 # C (0x43), rather than the ASCII characters '0x43'.
 assert 0x43 - 0x3A == 9
