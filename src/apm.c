@@ -138,6 +138,29 @@ apm_shutdown(void)
 static void
 handle_155307(struct bregs *regs)
 {
+    if (GET_GLOBAL(ApmPowerSnapshot.version) == WHP_APM_POWER_VERSION) {
+        if (regs->bx != 1) {
+            set_code_invalid_silent(regs, 0x09); // unknown power device
+            return;
+        }
+        switch (regs->cx) {
+        case 1: // standby
+        case 2: // suspend
+            // No emulated sleep controller exists. Never report a fake sleep.
+            set_code_invalid_silent(regs, 0x60); // cannot enter state
+            return;
+        case 3: // off (existing ACPI poweroff path)
+            apm_shutdown();
+            return;
+        case 4: // pending request notification
+        case 5: // rejected request notification
+            set_success(regs);
+            return;
+        default:
+            set_code_invalid_silent(regs, 0x0a); // invalid state ID
+            return;
+        }
+    }
     if (regs->bx != 1) {
         set_success(regs);
         return;

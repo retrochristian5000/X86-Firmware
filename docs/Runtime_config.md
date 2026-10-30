@@ -248,7 +248,11 @@ other device IDs with AH=09h. AX=5310h/BX=0000h reports the same number
 of battery units in BL, but **no suspend/standby wake capabilities** in CX.
 
 This record is sampled only once at POST. It is **not live** telemetry:
-charge or AC status cannot change without another POST. No laptop, charger,
+charge or AC status cannot change without another POST. With the laptop
+snapshot active, APM AX=5307h standby/suspend requests return AH=60h
+("unable to enter requested state") instead of falsely succeeding;
+invalid device IDs return AH=09h and unsupported states return AH=0Ah.
+The existing power-off path remains available. No laptop, charger,
 battery, lid, PCMCIA controller or suspend mechanism is invented here.
 This feature does not change the separate Dell-style F2/F12 or AMI overlays.
 
