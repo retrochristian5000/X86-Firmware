@@ -207,18 +207,25 @@ usb_xfer_time(struct usb_pipe *pipe, int datalen)
 struct usb_endpoint_descriptor *
 usb_find_desc(struct usbdevice_s *usbdev, int type, int dir)
 {
-    struct usb_endpoint_descriptor *epdesc = (void*)&usbdev->iface[1];
-    for (;;) {
-        if ((void*)epdesc >= (void*)usbdev->iface + usbdev->imax
-            || epdesc->bDescriptorType == USB_DT_INTERFACE) {
+    u8 *desc = (void*)usbdev->iface + usbdev->iface->bLength;
+    u8 *end = (void*)usbdev->iface + usbdev->imax;
+
+    while (desc < end) {
+        if (end - desc < 2 || desc[0] < 2 || desc[0] > end - desc)
             return NULL;
+        if (desc[1] == USB_DT_INTERFACE)
+            return NULL;
+        if (desc[1] == USB_DT_ENDPOINT) {
+            if (desc[0] < sizeof(struct usb_endpoint_descriptor))
+                return NULL;
+            struct usb_endpoint_descriptor *epdesc = (void*)desc;
+            if ((epdesc->bEndpointAddress & USB_ENDPOINT_DIR_MASK) == dir
+                && (epdesc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) == type)
+                return epdesc;
         }
-        if (epdesc->bDescriptorType == USB_DT_ENDPOINT
-            && (epdesc->bEndpointAddress & USB_ENDPOINT_DIR_MASK) == dir
-            && (epdesc->bmAttributes & USB_ENDPOINT_XFERTYPE_MASK) == type)
-            return epdesc;
-        epdesc = (void*)epdesc + epdesc->bLength;
+        desc += desc[0];
     }
+    return NULL;
 }
 
 // Get the first 8 bytes of the device descriptor.
@@ -246,7 +253,8 @@ get_device_config(struct usb_pipe *pipe)
     req.wIndex = 0;
     req.wLength = sizeof(cfg);
     int ret = usb_send_default_control(pipe, &req, &cfg);
-    if (ret)
+    if (ret || cfg.bDescriptorType != USB_DT_CONFIG
+        || cfg.bLength < sizeof(cfg) || cfg.wTotalLength < cfg.bLength)
         return NULL;
 
     struct usb_config_descriptor *config = malloc_tmphigh(cfg.wTotalLength);
@@ -256,7 +264,10 @@ get_device_config(struct usb_pipe *pipe)
     }
     req.wLength = cfg.wTotalLength;
     ret = usb_send_default_control(pipe, &req, config);
-    if (ret || config->wTotalLength != cfg.wTotalLength) {
+    if (ret || config->bDescriptorType != USB_DT_CONFIG
+        || config->bLength < sizeof(*config)
+        || config->bLength > config->wTotalLength
+        || config->wTotalLength != cfg.wTotalLength) {
         free(config);
         return NULL;
     }
@@ -367,27 +378,38 @@ configure_usb_device(struct usbdevice_s *usbdev)
     if (!config)
         return 0;
 
-    // Determine if a driver exists for this device - only look at the
-    // interfaces of the first configuration.
-    int num_iface = config->bNumInterfaces;
-    void *config_end = (void*)config + config->wTotalLength;
-    struct usb_interface_descriptor *iface = (void*)(&config[1]);
-    for (;;) {
-        if (!num_iface || (void*)iface + iface->bLength > config_end)
-            // Not a supported device.
+    // Search complete descriptors, not a count of interface descriptors:
+    // alternate settings share an interface number.  Cellular devices
+    // commonly have multiple interfaces and non-boot alternate settings.
+    // SeaBIOS only drives supported boot interfaces; leave cellular
+    // control and data interfaces for the guest operating system.
+    u8 *desc = (void*)config + config->bLength;
+    u8 *config_end = (void*)config + config->wTotalLength;
+    struct usb_interface_descriptor *iface = NULL;
+    if (!config->bNumInterfaces)
+        goto fail;
+    while (desc < config_end) {
+        if (config_end - desc < 2 || desc[0] < 2
+            || desc[0] > config_end - desc)
             goto fail;
-        if (iface->bDescriptorType == USB_DT_INTERFACE) {
-            num_iface--;
-            if (iface->bInterfaceClass == USB_CLASS_HUB
-                || (iface->bInterfaceClass == USB_CLASS_MASS_STORAGE
-                    && (iface->bInterfaceProtocol == US_PR_BULK
-                        || iface->bInterfaceProtocol == US_PR_UAS))
-                || (iface->bInterfaceClass == USB_CLASS_HID
-                    && iface->bInterfaceSubClass == USB_INTERFACE_SUBCLASS_BOOT))
+        if (desc[1] == USB_DT_INTERFACE) {
+            if (desc[0] < sizeof(*iface))
+                goto fail;
+            iface = (void*)desc;
+            if (iface->bAlternateSetting == 0
+                && (iface->bInterfaceClass == USB_CLASS_HUB
+                    || (iface->bInterfaceClass == USB_CLASS_MASS_STORAGE
+                        && (iface->bInterfaceProtocol == US_PR_BULK
+                            || iface->bInterfaceProtocol == US_PR_UAS))
+                    || (iface->bInterfaceClass == USB_CLASS_HID
+                        && iface->bInterfaceSubClass ==
+                            USB_INTERFACE_SUBCLASS_BOOT)))
                 break;
         }
-        iface = (void*)iface + iface->bLength;
+        desc += desc[0];
     }
+    if (desc >= config_end)
+        goto fail;
 
     // Set the configuration.
     ret = set_configuration(usbdev->defpipe, config->bConfigurationValue);
@@ -485,6 +507,7 @@ usb_enumerate(struct usbhub_s *hub)
         struct usbdevice_s *usbdev = malloc_tmphigh(sizeof(*usbdev));
         if (!usbdev) {
             warn_noalloc();
+            hub->threads--;
             continue;
         }
         memset(usbdev, 0, sizeof(*usbdev));
