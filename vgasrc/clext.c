@@ -10,6 +10,7 @@
 #include "hw/pci.h" // pci_config_readl
 #include "hw/pci_regs.h" // PCI_BASE_ADDRESS_0
 #include "output.h" // dprintf
+#include "std/vbe.h" // VBE_RETURN_STATUS_FAILED
 #include "stdvga.h" // VGAREG_SEQU_ADDRESS
 #include "string.h" // memset16_far
 #include "vgabios.h" // SET_VGA
@@ -442,6 +443,10 @@ cirrus_clear_vram(u16 fill)
 int
 clext_set_mode(struct vgamode_s *vmode_g, int flags)
 {
+    // Match the framebuffer availability reported by VBE mode information.
+    if ((flags & MF_LINEARFB) && !GET_GLOBAL(VBE_framebuffer))
+        return VBE_RETURN_STATUS_FAILED;
+
     if (!is_cirrus_mode(vmode_g)) {
         cirrus_switch_mode(&mode_switchback);
         dprintf(1, "cirrus mode switch regular\n");
@@ -469,14 +474,27 @@ static void
 clext_101280(struct bregs *regs)
 {
     u8 v = stdvga_crtc_read(stdvga_get_crtc(), 0x27);
-    if (v == 0xa0)
-        // 5430
+    // CR27 holds the controller ID above the two silicon revision bits.
+    switch (v & 0xfc) {
+    case 0x8c: // CL-GD5422
+        regs->ax = 0x0013;
+        break;
+    case 0x90: // CL-GD5426
+        regs->ax = 0x0015;
+        break;
+    case 0x98: // CL-GD5428
+        regs->ax = 0x0018;
+        break;
+    case 0xa0: // CL-GD5430
         regs->ax = 0x0032;
-    else if (v == 0xb8)
-        // 5446
+        break;
+    case 0xb8: // CL-GD5446
         regs->ax = 0x0039;
-    else
+        break;
+    default:
         regs->ax = 0x00ff;
+        break;
+    }
     regs->bx = 0x00;
     return;
 }
