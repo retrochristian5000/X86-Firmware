@@ -64,6 +64,7 @@ static inline void wbinvd(void)
     asm volatile("wbinvd": : :"memory");
 }
 
+#define CPUID_FPU (1 << 0)
 #define CPUID_TSC (1 << 4)
 #define CPUID_MSR (1 << 5)
 #define CPUID_APIC (1 << 9)
