@@ -80,7 +80,7 @@ usb_process_op(struct disk_op_s *op)
     // existing 12-byte command length for older requests and devices.
     int cmdlen = USB_CDB_SIZE;
     if ((op->command == CMD_READ || op->command == CMD_WRITE)
-        && op->lba >= 0xFFFFFFFFULL)
+        && scsi_rw16_needed(op->lba, op->count))
         cmdlen = sizeof(cbw.CBWCB);
     int blocksize = scsi_fill_cmd(op, cbw.CBWCB, cmdlen);
     if (blocksize < 0)
