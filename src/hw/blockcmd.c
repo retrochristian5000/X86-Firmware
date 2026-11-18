@@ -128,7 +128,7 @@ scsi_fill_cmd(struct disk_op_s *op, void *cdbcmd, int maxcdb)
     switch (op->command) {
     case CMD_READ:
     case CMD_WRITE: ;
-        if (op->lba < 0xFFFFFFFFULL) {
+        if (!scsi_rw16_needed(op->lba, op->count)) {
             struct cdb_rwdata_10 *cmd = cdbcmd;
             memset(cmd, 0, maxcdb);
             cmd->command = (op->command == CMD_READ ? CDB_CMD_READ_10
