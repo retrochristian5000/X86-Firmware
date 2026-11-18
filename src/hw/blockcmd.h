@@ -126,6 +126,14 @@ struct cdbres_mode_sense_geom {
     u16 rpm;
 } PACKED;
 
+// Use READ(16)/WRITE(16) when the LBA or transfer crosses the 32-bit
+// LBA limit.  The subtraction is safe because the first test short-circuits.
+static inline int
+scsi_rw16_needed(u64 lba, u16 count)
+{
+    return lba >= 0xFFFFFFFFULL || count > 0x100000000ULL - lba;
+}
+
 // blockcmd.c
 struct disk_op_s;
 int scsi_fill_cmd(struct disk_op_s *op, void *cdbcmd, int maxcdb);
