@@ -12,6 +12,7 @@
 #include "romfile.h" // romfile_loadint
 #include "stacks.h" // call16_int
 #include "string.h" // memset
+#include "x86.h" // cpuid, CPUID_FPU
 
 #define PORT_MATH_CLEAR        0x00f0
 
@@ -74,9 +75,25 @@ void
 mathcp_setup(void)
 {
     dprintf(3, "math cp init\n");
-    // 80x87 coprocessor installed
-    set_equipment_flags(0x02, 0x02);
-    enable_hwirq(13, FUNC16(entry_75));
+    // CPUID leaf 1 reports whether the CPU has an x87 FPU.  Older
+    // processors without CPUID need a separate hardware presence probe;
+    // retain their existing BIOS behavior until one is available.
+    u32 eax, ebx, ecx, edx;
+    int has_fpu = 1;
+    cpuid(0, &eax, &ebx, &ecx, &edx);
+    if (eax >= 1) {
+        cpuid(1, &eax, &ebx, &ecx, &edx);
+        has_fpu = !!(edx & CPUID_FPU);
+    }
+
+    if (has_fpu) {
+        // 80x87 coprocessor installed
+        set_equipment_flags(0x02, 0x02);
+        enable_hwirq(13, FUNC16(entry_75));
+    } else {
+        set_equipment_flags(0x02, 0);
+        dprintf(1, "CPU reports no x87 coprocessor\n");
+    }
 
     /*
      * Compaq, Dell, and other 386/486 BIOSes extended INT 11h into EAX:
