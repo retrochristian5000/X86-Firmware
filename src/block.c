@@ -72,7 +72,9 @@ int create_bounce_buf(void)
 static int
 host_lchs_supplied(struct drive_s *drive)
 {
-    return (drive->lchs.head <= 255 &&
+    // Zero CHS components are not valid INT 13h geometries.
+    return (drive->lchs.cylinder > 0 &&
+            drive->lchs.head > 0 && drive->lchs.head <= 255 &&
             drive->lchs.sector > 0 && drive->lchs.sector <= 63);
 }
 
