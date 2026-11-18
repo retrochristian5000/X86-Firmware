@@ -626,7 +626,8 @@ process_op(struct disk_op_s *op)
             , op->count, op->command);
 
     int ret, origcount = op->count;
-    if (origcount * GET_FLATPTR(op->drive_fl->blksize) > 64*1024) {
+    // count and blksize are both 16-bit; their product may exceed INT_MAX.
+    if ((u32)origcount * GET_FLATPTR(op->drive_fl->blksize) > 64*1024) {
         op->count = 0;
         return DISK_RET_EBOUNDARY;
     }
