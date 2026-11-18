@@ -76,7 +76,13 @@ usb_process_op(struct disk_op_s *op)
     // Setup command block wrapper.
     struct cbw_s cbw;
     memset(&cbw, 0, sizeof(cbw));
-    int blocksize = scsi_fill_cmd(op, cbw.CBWCB, USB_CDB_SIZE);
+    // SCSI READ(16)/WRITE(16) need all 16 CDB bytes.  Preserve the
+    // existing 12-byte command length for older requests and devices.
+    int cmdlen = USB_CDB_SIZE;
+    if ((op->command == CMD_READ || op->command == CMD_WRITE)
+        && op->lba >= 0xFFFFFFFFULL)
+        cmdlen = sizeof(cbw.CBWCB);
+    int blocksize = scsi_fill_cmd(op, cbw.CBWCB, cmdlen);
     if (blocksize < 0)
         return default_process_op(op);
     u32 bytes = blocksize * op->count;
@@ -85,7 +91,7 @@ usb_process_op(struct disk_op_s *op)
     cbw.dCBWDataTransferLength = bytes;
     cbw.bmCBWFlags = scsi_is_read(op) ? USB_DIR_IN : USB_DIR_OUT;
     cbw.bCBWLUN = GET_GLOBALFLAT(udrive_gf->lun);
-    cbw.bCBWCBLength = USB_CDB_SIZE;
+    cbw.bCBWCBLength = cmdlen;
 
     // Transfer cbw to device.
     int ret = usb_msc_send(udrive_gf, USB_DIR_OUT
