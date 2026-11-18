@@ -236,7 +236,7 @@ static u64 scsilun2u64(struct scsi_lun *scsi_lun)
     int i;
     u64 ret = 0;
     for (i = 0; i < ARRAY_SIZE(scsi_lun->lun); i++)
-        ret |= be16_to_cpu(scsi_lun->lun[i]) << (16 * i);
+        ret |= (u64)be16_to_cpu(scsi_lun->lun[i]) << (16 * i);
     return ret;
 }
 
@@ -263,6 +263,13 @@ int scsi_rep_luns_scan(struct drive_s *tmp_drive, scsi_add_lun add_lun)
     ASSERT32FLAT();
 
     while (1) {
+        // disk_op_s.blocksize is u16; reject oversized device reports
+        // before the allocation length silently wraps around.
+        if (maxluns > (0xffffU - sizeof(struct cdbres_report_luns))
+                       / sizeof(struct scsi_lun)) {
+            dprintf(1, "SCSI REPORT LUNS count too large: %u\n", maxluns);
+            return -1;
+        }
         op.blocksize = sizeof(struct cdbres_report_luns) +
             maxluns * sizeof(struct scsi_lun);
         op.buf_fl = malloc_tmp(op.blocksize);
