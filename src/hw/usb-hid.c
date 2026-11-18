@@ -86,6 +86,9 @@ struct keyevent {
 };
 
 #define MAX_KBD_EVENT 16
+// Bound the work in IRQ0.  A controller that continuously reports completed
+// transfers must not keep the BIOS timer interrupt from returning to the OS.
+#define USB_HID_POLL_BUDGET 16
 
 static int
 usb_kbd_setup(struct usbdevice_s *usbdev
@@ -349,7 +352,7 @@ usb_check_key(void)
          node = GET_GLOBALFLAT(node->next)) {
         struct usb_pipe *pipe = GET_GLOBALFLAT(node->pipe);
 
-        for (;;) {
+        for (int poll = 0; poll < USB_HID_POLL_BUDGET; poll++) {
             u8 data[MAX_KBD_EVENT];
             int ret = usb_poll_intr(pipe, data);
             if (ret)
@@ -418,7 +421,7 @@ usb_check_mouse(void)
          node = GET_GLOBALFLAT(node->next)) {
         struct usb_pipe *pipe = GET_GLOBALFLAT(node->pipe);
 
-        for (;;) {
+        for (int poll = 0; poll < USB_HID_POLL_BUDGET; poll++) {
             u8 data[MAX_MOUSE_EVENT];
             int ret = usb_poll_intr(pipe, data);
             if (ret)
