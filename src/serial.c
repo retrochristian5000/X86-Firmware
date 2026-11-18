@@ -234,7 +234,10 @@ lpt_setup(void)
         return;
     dprintf(3, "init lpt\n");
 
+    // The IBM monochrome display/printer adapter is probed first, so
+    // its port at 3BCh becomes LPT1 when present.
     u16 count = 0;
+    count += detect_parport(PORT_LPT_MDA, 0x14, count);
     count += detect_parport(PORT_LPT1, 0x14, count);
     count += detect_parport(PORT_LPT2, 0x14, count);
     dprintf(1, "Found %d lpt ports\n", count);
