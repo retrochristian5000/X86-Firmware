@@ -7,6 +7,7 @@
 #define PORT_SERIAL4           0x02e8
 #define PORT_SERIAL2           0x02f8
 #define PORT_LPT1              0x0378
+#define PORT_LPT_MDA           0x03bc
 #define PORT_SERIAL3           0x03e8
 #define PORT_SERIAL1           0x03f8
 
