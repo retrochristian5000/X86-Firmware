@@ -270,8 +270,8 @@ int scsi_rep_luns_scan(struct drive_s *tmp_drive, scsi_add_lun add_lun)
             dprintf(1, "SCSI REPORT LUNS count too large: %u\n", maxluns);
             return -1;
         }
-        op.blocksize = sizeof(struct cdbres_report_luns) +
-            maxluns * sizeof(struct scsi_lun);
+        op.blocksize = (u16)(sizeof(struct cdbres_report_luns) +
+                             maxluns * sizeof(struct scsi_lun));
         op.buf_fl = malloc_tmp(op.blocksize);
         if (!op.buf_fl) {
             warn_noalloc();
