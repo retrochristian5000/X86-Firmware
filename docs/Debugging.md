@@ -68,6 +68,42 @@ reduce ROM-space usage: doing so can consume conventional memory
 needed by DOS applications. A report by itself does not modify
 the firmware memory policy.
 
+Extended QEMU POST self-test
+===========================
+
+SeaBIOS already performs a real POST: legacy interrupt and data-area
+initialization, DMA/PIC/timer setup, virtual device discovery, VGA and option
+ROM execution, and boot preparation. A fast virtual POST normally trusts the
+RAM map provided by QEMU. For an **active** memory check, the WHP fork offers
+an explicitly requested extended POST:
+
+```
+qemu-system-i386 -m 64M -bios out/bios.bin \
+    -fw_cfg name=opt/org.seabios/whp-extended-post,string=1 \
+    -chardev file,id=seabios,path=seabios-post.log \
+    -device isa-debugcon,iobase=0x402,chardev=seabios
+```
+
+With this option, SeaBIOS checks that the E820 map is sorted, has no
+overlaps/overflow/zero-size entries and contains RAM; checks the BIOS Data
+Area conventional-memory limit and the Extended BIOS Data Area boundary
+and reservation; then performs two independent read/write pattern passes,
+plus walking-one and walking-zero bit tests, on a freshly allocated
+**4 KiB temporary RAM buffer**. It frees the buffer before boot. On a
+failure the firmware prints `WHP POST FAIL` and halts before the boot
+interrupt; on success it prints `WHP extended POST: ... PASS`. This
+option is QEMU-specific and disabled during normal boots.
+
+These tests *exercise real RAM reads and writes* inside the emulator but
+do **not** verify every byte of guest RAM, a physical memory module,
+CPU silicon, or every emulated device. The normal initialization of
+PCI, storage, keyboard, timer and display remains controlled by the
+hardware configuration; a missing optional device is not incorrectly
+classified as a POST failure. Use the existing memory-footprint option
+(`whp-memory-report`) independently when investigating RAM consumption.
+Do not replace these active tests with a cosmetic full-screen POST
+counting animation.
+
 Timing debug messages
 =====================
 

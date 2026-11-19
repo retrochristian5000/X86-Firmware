@@ -49,6 +49,11 @@ jobs:
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -o "$test_bin" scripts/test-laptop-apm.c
           "$test_bin"
 
+      - name: Run extended POST memory and E820 helper tests
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -Isrc -o /tmp/whp-post-selftest scripts/test-post-selftest.c
+          /tmp/whp-post-selftest
+
       - name: Build SeaBIOS
         run: make -j2
 

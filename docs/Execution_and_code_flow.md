@@ -47,6 +47,14 @@ The POST phase itself has several sub-phases.
 At completion of the POST phase, SeaBIOS invokes an "int 0x19"
 software interrupt in 16bit mode which begins the boot phase.
 
+On the WHP QEMU fork, the optional `opt/org.seabios/whp-extended-post`
+firmware configuration file enables a bounded, actual RAM read/write
+check and E820/EBDA consistency checks *after device and option-ROM
+initialization but before boot preparation*. A failure stops before
+INT 19h instead of merely printing a misleading successful POST.
+The normal POST remains initialization-focused and avoids unnecessary
+full-RAM passes on every emulated boot.
+
 Boot phase
 ----------
 

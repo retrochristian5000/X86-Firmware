@@ -20,6 +20,7 @@
 #include "malloc.h" // malloc_init
 #include "memmap.h" // SYMBOL
 #include "output.h" // dprintf
+#include "post-selftest.h" // whp_post_e820_valid, whp_post_ram_fill
 #include "romfile.h" // romfile_find
 #include "string.h" // memset
 #include "util.h" // kbd_init
@@ -210,6 +211,68 @@ post_timing_log(int enabled, u32 *last, const char *phase)
     dprintf(1, "POST timing: %s: %u ms\n", phase, elapsed);
 }
 
+// Optional extended POST: unlike discovery from fw_cfg, these are active
+// checks of guest RAM backed by a temporary owned allocation, EBDA/BDA, and
+// the E820 map.  A failed check must never fall through into INT 19h.
+// This does not claim to test *all* guest RAM, CPUs, or device functions.
+static void
+whp_extended_post(void)
+{
+    ASSERT32FLAT();
+
+    if (e820_count <= 0 || e820_count > BUILD_MAX_E820 ||
+        whp_post_e820_valid(e820_list, e820_count)) {
+        printf("WHP POST FAIL: invalid E820 memory map\n");
+        panic("WHP extended POST: E820 map validation failed\n");
+    }
+
+    u16 seg = get_ebda_seg();
+    u32 ebda_start = (u32)seg << 4;
+    u32 conventional_end = (u32)GET_BDA(mem_size_kb) * 1024;
+    if (ebda_start < BUILD_EBDA_MINIMUM ||
+        ebda_start >= BUILD_LOWRAM_END ||
+        conventional_end != ebda_start) {
+        printf("WHP POST FAIL: EBDA/BDA memory boundary\n");
+        panic("WHP extended POST: EBDA/BDA boundary failed\n");
+    }
+
+    u32 ebda_kib = GET_EBDA(seg, size);
+    u32 ebda_bytes = ebda_kib * 1024;
+    if (!ebda_kib || ebda_bytes > BUILD_LOWRAM_END - ebda_start ||
+        !whp_post_e820_reserves(e820_list, e820_count, ebda_start,
+                                ebda_bytes)) {
+        printf("WHP POST FAIL: EBDA reservation\n");
+        panic("WHP extended POST: EBDA reservation failed\n");
+    }
+
+    // Test 4 KiB actually allocated from SeaBIOS temporary RAM. Never
+    // overwrite arbitrary guest RAM, the IVT, option ROMs, or firmware tables.
+    // Volatile accesses make the two address-dependent passes observable.
+    const u32 words_count = 4096 / sizeof(u32);
+    void *owned = malloc_tmp(4096);
+    if (!owned) {
+        printf("WHP POST FAIL: no temporary RAM for self-test\n");
+        panic("WHP extended POST: temporary RAM allocation failed\n");
+    }
+    volatile u32 *words = (volatile u32*)owned;
+    whp_post_ram_fill(words, words_count, 0);
+    int failed = whp_post_ram_verify(words, words_count, 0);
+    if (!failed) {
+        whp_post_ram_fill(words, words_count, 1);
+        failed = whp_post_ram_verify(words, words_count, 1);
+    }
+    if (!failed)
+        failed = whp_post_ram_walk(&words[0]);
+    free(owned);
+    if (failed) {
+        printf("WHP POST FAIL: RAM read/write patterns\n");
+        panic("WHP extended POST: RAM pattern validation failed\n");
+    }
+
+    printf("WHP extended POST: RAM 4 KiB, E820 and EBDA checks PASS\n");
+    dprintf(1, "WHP extended POST: RAM 4 KiB, E820 and EBDA checks PASS\n");
+}
+
 // Main setup code.
 static void
 maininit(void)
@@ -229,6 +292,8 @@ maininit(void)
     // consumes no extra guest RAM and does not change the E820 memory map.
     int memory_report = CONFIG_DEBUG_LEVEL && CONFIG_QEMU
                         && romfile_find("opt/org.seabios/whp-memory-report") != NULL;
+    int extended_post = CONFIG_QEMU
+                        && romfile_find("opt/org.seabios/whp-extended-post") != NULL;
     u32 post_last = post_timing ? timer_calc(0) : 0;
 
     // Start hardware initialization (if threads allowed during optionroms)
@@ -257,6 +322,12 @@ maininit(void)
     post_timing_log(post_timing, &post_last, "boot menu");
     wait_threads();
     post_timing_log(post_timing, &post_last, "device completion");
+
+    // Test only after parallel device setup and option ROMs have finished,
+    // and before prepboot returns temporary memory to the operating system.
+    if (extended_post)
+        whp_extended_post();
+    post_timing_log(post_timing, &post_last, "extended POST");
 
     // Prepare for boot. malloc_prepboot() has already returned unused
     // whole pages of ZoneHigh to E820 before reporting retained storage.
