@@ -35,6 +35,39 @@ set to a debug level of 8 and forward the full log along with a
 description of the problem to the SeaBIOS [mailing
 list](Mailinglist.md).
 
+Opt-in QEMU guest-memory footprint report
+=========================================
+
+For the WHP X86-Firmware fork, enable a one-time firmware allocation report
+at the **end** of POST, after unused high-memory pages have been returned:
+
+```
+qemu-system-i386 -m 64M -bios out/bios.bin \
+    -fw_cfg name=opt/org.seabios/whp-memory-report,string=1 \
+    -chardev file,id=seabios,path=seabios-memory.log \
+    -device isa-debugcon,iobase=0x402,chardev=seabios
+```
+
+The `WHP SeaBIOS memory:` messages identify the conventional memory
+limit (KiB), EBDA size (KiB), tracked permanent allocations in the
+low, F-segment and high zones (bytes), and the whole pages returned
+from the high zone (bytes). They also identify whether the low zone
+uses upper/option-ROM space or conventional RAM. The option's **presence**
+enables the diagnostic; no additional SeaBIOS allocations or E820
+reservations are made for reporting.
+
+This is an allocator footprint, **not** the total QEMU process RSS and
+not the total unavailable guest RAM. Static BIOS/F-segment contents,
+PCI MMIO/option ROM address holes, ACPI/NVS reservations, and temporary
+allocations are not all represented by the dynamic-zone totals. The
+ordinary SeaBIOS E820 debug listing at level 1 provides the final
+guest memory map. Compare identical machine types, `-m` values,
+attached devices and boot media before attributing a change to
+firmware. `CONFIG_MALLOC_UPPERMEMORY` must not be disabled just to
+reduce ROM-space usage: doing so can consume conventional memory
+needed by DOS applications. A report by itself does not modify
+the firmware memory policy.
+
 Timing debug messages
 =====================
 

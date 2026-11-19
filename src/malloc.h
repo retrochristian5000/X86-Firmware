@@ -15,6 +15,7 @@ void malloc_preinit(void);
 extern u32 LegacyRamSize;
 void malloc_init(void);
 void malloc_prepboot(void);
+void malloc_report_memory(void);
 u32 malloc_palloc(struct zone_s *zone, u32 size, u32 align);
 void *_malloc(struct zone_s *zone, u32 size, u32 align);
 int malloc_pfree(u32 data);

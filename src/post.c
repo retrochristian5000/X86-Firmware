@@ -225,6 +225,10 @@ maininit(void)
     // rather than its contents, enables the trace.
     int post_timing = CONFIG_DEBUG_LEVEL
                       && romfile_find("opt/org.seabios/whp-post-timing") != NULL;
+    // This QEMU-only report reads existing allocator data after POST; it
+    // consumes no extra guest RAM and does not change the E820 memory map.
+    int memory_report = CONFIG_DEBUG_LEVEL && CONFIG_QEMU
+                        && romfile_find("opt/org.seabios/whp-memory-report") != NULL;
     u32 post_last = post_timing ? timer_calc(0) : 0;
 
     // Start hardware initialization (if threads allowed during optionroms)
@@ -254,8 +258,11 @@ maininit(void)
     wait_threads();
     post_timing_log(post_timing, &post_last, "device completion");
 
-    // Prepare for boot.
+    // Prepare for boot. malloc_prepboot() has already returned unused
+    // whole pages of ZoneHigh to E820 before reporting retained storage.
     prepareboot();
+    if (memory_report)
+        malloc_report_memory();
     post_timing_log(post_timing, &post_last, "boot preparation");
 
     // Write protect bios memory.

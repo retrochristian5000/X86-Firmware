@@ -527,6 +527,46 @@ malloc_init(void)
     calcRamSize();
 }
 
+// Report only allocations which must remain at runtime. Initialization
+// heaps (ZoneTmpLow/ZoneTmpHigh) are intentionally excluded: their storage
+// is reusable after POST and is not permanently removed from guest RAM.
+static u32
+zone_dynamic_bytes(struct zone_s *zone)
+{
+    u32 total = 0;
+    struct allocinfo_s *info;
+    hlist_for_each_entry(info, &zone->head, node)
+        total += info->alloc_size;
+    return total;
+}
+
+// Opt-in SeaBIOS footprint diagnostics. Traverse existing allocation records:
+// no new heap blocks, firmware tables, or E820 reservations are created.
+void
+malloc_report_memory(void)
+{
+    ASSERT32FLAT();
+
+    u32 conventional_kib = GET_BDA(mem_size_kb);
+    u16 ebda_seg = get_ebda_seg();
+    u32 ebda_kib = GET_EBDA(ebda_seg, size);
+    u32 high_returned = 0;
+    struct allocinfo_s *bottom = alloc_find_lowest(&ZoneHigh);
+    if (bottom) {
+        // Must agree with the actual page-granular giveback in prepboot.
+        u32 free_tail = bottom->range_end - bottom->range_start;
+        high_returned = ALIGN_DOWN(free_tail, PAGE_SIZE);
+    }
+
+    dprintf(1, "WHP SeaBIOS memory: conventional=%u KiB EBDA=%u KiB low-zone=%u B fseg=%u B high-zone=%u B high-returned=%u B\n"
+            , conventional_kib, ebda_kib
+            , zone_dynamic_bytes(&ZoneLow), zone_dynamic_bytes(&ZoneFSeg)
+            , zone_dynamic_bytes(&ZoneHigh), high_returned);
+    dprintf(1, "WHP SeaBIOS memory: low-zone location=%s; E820 reservations also include non-BIOS hardware regions\n"
+            , CONFIG_MALLOC_UPPERMEMORY ? "upper memory (C0000-EFFFF)"
+                                        : "conventional memory (90000-9FFFF)");
+}
+
 void
 malloc_prepboot(void)
 {
