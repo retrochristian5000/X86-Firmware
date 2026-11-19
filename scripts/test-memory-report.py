@@ -41,7 +41,7 @@ for required in ('GET_BDA(mem_size_kb)', 'GET_EBDA(ebda_seg, size)',
 # The output must explain its units and not equate allocations with all
 # reserved guest memory or host process memory.
 assert 'whole pages returned' in docs
-assert 'not the total QEMU process RSS' in ' '.join(docs.split())
+assert '**not** the total QEMU process RSS' in ' '.join(docs.split())
 assert 'E820 reservations also include non-BIOS hardware regions' in memory
 
 print('SeaBIOS opt-in guest-memory report: verified')
