@@ -8,6 +8,7 @@
 #include "config.h" // CONFIG_*
 #include "output.h" // dprintf
 #include "romfile.h" // romfile_loadint
+#include "hw/timer-shift.h" // timer_tsc_low32
 #include "stacks.h" // yield
 #include "util.h" // timer_setup
 #include "x86.h" // cpuid
@@ -178,9 +179,16 @@ static u32
 timer_read(void)
 {
     u16 port = GET_GLOBAL(TimerPort);
-    if (CONFIG_TSC_TIMER && !port)
-        // Read from CPU TSC
-        return rdtscll() >> GET_GLOBAL(ShiftTSC);
+    if (CONFIG_TSC_TIMER && !port) {
+        /*
+         * A variable u64 shift can become an unresolved __lshrdi3 call
+         * with Clang -Oz in 16-bit mode. Keep the exact low 32-bit value
+         * using only 32-bit operations in the freestanding BIOS.
+         */
+        union u64_u32_u tsc = { .val = rdtscll() };
+
+        return timer_tsc_low32(tsc.lo, tsc.hi, GET_GLOBAL(ShiftTSC));
+    }
     if (CONFIG_PMTIMER && port != PORT_PIT_COUNTER0)
         // Read from PMTIMER
         return timer_adjust_bits(inl(port), 0xffffff);

@@ -54,6 +54,14 @@ jobs:
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -o /tmp/whp-post-selftest scripts/test-post-selftest.c
           /tmp/whp-post-selftest
 
+      - name: Test TSC projection without freestanding 64-bit shift libcalls
+        run: |
+          test_bin="$(mktemp)"
+          trap 'rm -f "$test_bin"' EXIT
+          cc -std=c11 -Wall -Wextra -Werror -Isrc \
+            -o "$test_bin" scripts/test-timer-shift.c
+          "$test_bin"
+
       - name: Verify firmware layout and ROM size audit
         run: python3 scripts/test-layoutrom.py
 
