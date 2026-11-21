@@ -60,8 +60,8 @@ class RomSizeReportTests(unittest.TestCase):
         self.assertIn('ROM size audit: retained input sections', report)
         self.assertIn('16', report)
         self.assertIn('32init', report)
-        self.assertRegex(report, r'32init\\s+68\\n')
-        self.assertRegex(report, r'16\\s+40\\n')
+        self.assertRegex(report, r'32init\s+68\n')
+        self.assertRegex(report, r'16\s+40\n')
         self.assertNotIn('.bss.scratch', report)
         self.assertNotIn('.text.unused', report)
         self.assertLess(report.index('.text.large'),
