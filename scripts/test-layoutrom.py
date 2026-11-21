@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
 
+import contextlib
+import io
 import unittest
 
 import checkrom
@@ -8,11 +10,14 @@ import layoutrom
 
 
 class StubSection:
-    def __init__(self, name, finalloc, finalsegloc, fileid=None):
+    def __init__(self, name, finalloc, finalsegloc, fileid=None,
+                 size=0, category=None):
         self.name = name
         self.finalloc = finalloc
         self.finalsegloc = finalsegloc
         self.fileid = fileid
+        self.size = size
+        self.category = category
 
 
 class StubSymbol:
@@ -35,6 +40,34 @@ class LinkerScriptTests(unittest.TestCase):
         script = layoutrom.outRelSections([section])
 
         self.assertIn('. = ABSOLUTE(0x1234) ;', script)
+
+
+class RomSizeReportTests(unittest.TestCase):
+    def test_only_reachable_rom_sections_are_ranked(self):
+        sections = [
+            StubSection('.text.small', 0x1000, 0, '32flat', 8, '32init'),
+            StubSection('.text.large', 0x2000, 0, '32flat', 60, '32init'),
+            StubSection('.rodata.table', 0x3000, 0, '16', 40, '16'),
+            StubSection('.bss.scratch', 0x4000, 0, '32flat', 900, '32init'),
+            StubSection('.text.unused', None, None, '32flat', 500, '32init'),
+        ]
+        positions = [section.finalloc for section in sections]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            layoutrom.reportRomSectionSizes(sections, limit=2)
+
+        report = output.getvalue()
+        self.assertIn('ROM size audit: retained input sections', report)
+        self.assertIn('16', report)
+        self.assertIn('32init', report)
+        self.assertRegex(report, r'32init\\s+68\\n')
+        self.assertRegex(report, r'16\\s+40\\n')
+        self.assertNotIn('.bss.scratch', report)
+        self.assertNotIn('.text.unused', report)
+        self.assertLess(report.index('.text.large'),
+                        report.index('.rodata.table'))
+        self.assertNotIn('.text.small', report)
+        self.assertEqual(positions, [section.finalloc for section in sections])
 
 
 class ResetVectorTests(unittest.TestCase):

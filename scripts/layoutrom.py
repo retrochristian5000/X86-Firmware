@@ -6,6 +6,7 @@
 # This file may be distributed under the terms of the GNU GPLv3 license.
 
 import operator
+import os
 import sys
 
 # LD script headers/trailers
@@ -295,6 +296,34 @@ def doLayout(sections, config, genreloc):
     print("Lowmem size:          %d" % sizelow)
     print("f-segment var size:   %d" % size32fseg)
     return li
+
+
+def reportRomSectionSizes(sections, limit=12):
+    """Report placed, reachable sections without changing the ROM layout.
+
+    This is a raw-section inventory, not a measurement of final ROM bytes.
+    Alignment gaps, relocation tables, and output-section padding are counted
+    by the final checkrom.py size check instead.
+    """
+    retained = [section for section in sections
+                if section.finalloc is not None and section.size > 0
+                and not section.name.startswith('.bss')]
+    bycategory = {}
+    for section in retained:
+        bycategory[section.category] = (
+            bycategory.get(section.category, 0) + section.size)
+
+    print("ROM size audit: retained input sections (raw bytes; no padding)")
+    for category in sorted(bycategory):
+        print("  %-12s %7d" % (category, bycategory[category]))
+
+    largest = sorted(retained, key=lambda section: (
+        -section.size, section.category, section.fileid, section.name))
+    print("ROM size audit: largest %d retained sections" %
+          min(limit, len(largest)))
+    for section in largest[:limit]:
+        print("  %7d  %-12s %-6s %s" % (
+            section.size, section.category, section.fileid, section.name))
 
 
 ######################################################################
@@ -695,6 +724,8 @@ def main():
     # Determine the final memory locations of each kept section.
     genreloc = '_reloc_abs_start' in symbols['32flat']
     li = doLayout(sections, config, genreloc)
+    if os.environ.get('WHP_ROM_SIZE_REPORT') == '1':
+        reportRomSectionSizes(li.sections)
 
     # Exported symbols
     li.varlowsyms = [symbol for symbol in symbols['32flat'].values()

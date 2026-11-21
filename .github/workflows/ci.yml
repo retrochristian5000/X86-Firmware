@@ -54,8 +54,11 @@ jobs:
           cc -std=gnu11 -Wall -Wextra -Werror -Isrc -o /tmp/whp-post-selftest scripts/test-post-selftest.c
           /tmp/whp-post-selftest
 
+      - name: Verify firmware layout and ROM size audit
+        run: python3 scripts/test-layoutrom.py
+
       - name: Build SeaBIOS
-        run: make -j2
+        run: WHP_ROM_SIZE_REPORT=1 make -j2
 
       - name: Verify BIOS image
         run: test -s out/bios.bin
