@@ -80,7 +80,10 @@ COMMONCFLAGS += $(call cc-option,$(CC),-fcf-protection=none,)
 COMMA := ,
 
 CFLAGS32FLAT := $(COMMONCFLAGS) -DMODE16=0 -DMODESEGMENT=0
-CFLAGSSEG := $(COMMONCFLAGS) -DMODESEGMENT=1 -fno-defer-pop \
+# GCC's deferred argument cleanup control is unsupported by Clang.  Probe
+# instead of passing an ignored flag or substituting an unrelated LLVM pass.
+CFLAGSSEG := $(COMMONCFLAGS) -DMODESEGMENT=1 \
+    $(call cc-option,$(CC),-fno-defer-pop,) \
     $(call cc-option,$(CC),-fno-jump-tables,-DMANUAL_NO_JUMP_TABLE) \
     $(call cc-option,$(CC),-fno-tree-switch-conversion,)
 CFLAGS32SEG := $(CFLAGSSEG) -DMODE16=0
