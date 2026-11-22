@@ -714,17 +714,20 @@ dell_system_information(u32 model, int menukey)
         return 0;
     }
 
-    printf("\nWHP Dell-style System Information (read-only)\n");
-    printf("Emulated model: Dell %s\n", name);
-    printf("EISA system-board ID: %s\n", eisa_id);
-    printf("Firmware: SeaBIOS %s\n", VERSION);
-    printf("RAM below 4 GiB: %u MiB\n", RamSize / (1024 * 1024));
-    printf("Weitek 4167: %s\n",
+    // Emit the information block in one call: the text and user-visible
+    // ordering are unchanged, with less repeated printf call setup.
+    printf("\nWHP Dell-style System Information (read-only)\n"
+           "Emulated model: Dell %s\n"
+           "EISA system-board ID: %s\n"
+           "Firmware: SeaBIOS %s\n"
+           "RAM below 4 GiB: %u MiB\n"
+           "Weitek 4167: %s\n"
+           "This is not an original Dell BIOS Setup utility.\n",
+           name, eisa_id, VERSION, RamSize / (1024 * 1024),
            romfile_loadint("etc/weitek4167", 0) ? "reported" : "not reported");
-    printf("This is not an original Dell BIOS Setup utility.\n");
-    if (menukey == WHP_DELL_F12_SCANCODE)
-        printf("F12: one-time boot menu.  ");
-    printf("ESC/Enter: continue boot.\n");
+    printf("%sESC/Enter: continue boot.\n",
+           menukey == WHP_DELL_F12_SCANCODE
+           ? "F12: one-time boot menu.  " : "");
 
     for (;;) {
         int key = get_keystroke_full(1000);
