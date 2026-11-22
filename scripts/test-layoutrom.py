@@ -14,13 +14,14 @@ import layoutrom
 
 class StubSection:
     def __init__(self, name, finalloc, finalsegloc, fileid=None,
-                 size=0, category=None):
+                 size=0, category=None, align=1):
         self.name = name
         self.finalloc = finalloc
         self.finalsegloc = finalsegloc
         self.fileid = fileid
         self.size = size
         self.category = category
+        self.align = align
 
 
 class StubSymbol:
@@ -71,6 +72,37 @@ class RomSizeReportTests(unittest.TestCase):
                         report.index('.rodata.table'))
         self.assertNotIn('.text.small', report)
         self.assertEqual(positions, [section.finalloc for section in sections])
+
+
+class RomAlignmentReportTests(unittest.TestCase):
+    def test_start_padding_identifies_highest_aligned_sections(self):
+        sections = [
+            StubSection('.text.high', 0x1000, 0, '16', align=64),
+            StubSection('.data.small', 0x2000, 0, '32flat', align=4),
+            StubSection('.rodata.high', 0x3000, 0, '32flat', align=64),
+        ]
+        positions = [section.finalloc for section in sections]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            layoutrom.reportRomStartAlignment(
+                sections, 0xe003f, 0xe0000, 64, 12, 0)
+
+        report = output.getvalue()
+        self.assertIn('boundary=64 padding=63 relocations=12 multiboot=0',
+                      report)
+        self.assertIn('alignment source: 16     .text.high', report)
+        self.assertIn('alignment source: 32flat .rodata.high', report)
+        self.assertNotIn('.data.small', report)
+        self.assertEqual(positions, [section.finalloc for section in sections])
+
+    def test_no_padding_when_link_start_is_already_aligned(self):
+        section = StubSection('.text.entry', 0x1000, 0, '16', align=16)
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            layoutrom.reportRomStartAlignment(
+                [section], 0xe0100, 0xe0100, 16, 0, 12)
+        self.assertIn('boundary=16 padding=0 relocations=0 multiboot=12',
+                      output.getvalue())
 
 
 class ResetVectorTests(unittest.TestCase):
