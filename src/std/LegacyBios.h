@@ -30,7 +30,8 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 ///
 /// 
 ///
-#pragma pack(1)
+/* Keep CSM wire-format packing local to this header. */
+#pragma pack(push, 1)
 
 typedef UINT8                       SERIAL_MODE;
 typedef UINT8                       PARALLEL_MODE;
@@ -981,5 +982,7 @@ typedef struct {
   UINT16                            SecondaryBase;      ///< The secondary device I/O base.
   UINT16                            SecondaryBusMaster; ///< The secondary device bus master I/O base.
 } EFI_LEGACY_INSTALL_PCI_HANDLER;
+
+#pragma pack(pop)
 
 #endif
