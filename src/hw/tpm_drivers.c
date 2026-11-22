@@ -10,6 +10,7 @@
 #include "byteorder.h" // be32_to_cpu
 #include "config.h" // CONFIG_TPM_TIS_SHA1THRESHOLD
 #include "hw/tpm_drivers.h" // struct tpm_driver
+#include "hw/tpm-crb-size.h" // tpm_crb_response_size_valid
 #include "std/tcg.h" // TCG_RESPONSE_TIMEOUT
 #include "output.h" // warn_timeout
 #include "stacks.h" // yield
@@ -499,12 +500,14 @@ static u32 crb_readresp(u8 *buffer, u32 *len)
     if (readl(CRB_REG(locty, CRB_REG_CTRL_STS)) & CRB_CTRL_STS_ERROR)
         return 1;
 
-    if (*len < 6)
+    const u32 header_size = sizeof(struct tpm_rsp_header);
+    if (*len < header_size
+        || !tpm_crb_response_size_valid(crb_resp_size, header_size))
         return 1;
 
     memcpy(buffer, crb_resp, 6);
     u32 expected = be32_to_cpu(*(u32 *) &buffer[2]);
-    if (expected < 6)
+    if (!tpm_crb_response_size_valid(crb_resp_size, expected))
         return 1;
 
     *len = (*len < expected) ? *len : expected;

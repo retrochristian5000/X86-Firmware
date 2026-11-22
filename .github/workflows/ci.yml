@@ -74,6 +74,14 @@ jobs:
             -Wignored-attributes -Isrc -fsyntax-only \
             scripts/test-util-attributes.c
 
+      - name: Verify TPM CRB response capacity bounds
+        run: |
+          test_bin="$(mktemp)"
+          trap 'rm -f "$test_bin"' EXIT
+          cc -std=gnu11 -Wall -Wextra -Werror -Isrc \
+            -o "$test_bin" scripts/test-tpm-crb-size.c
+          "$test_bin"
+
       - name: Build SeaBIOS
         run: WHP_ROM_SIZE_REPORT=1 make -j2
 
