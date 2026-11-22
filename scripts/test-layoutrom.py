@@ -91,9 +91,9 @@ class RomStringReportTests(unittest.TestCase):
 
         report = output.getvalue()
         self.assertIn('ROM string audit: retained read-only sections', report)
-        self.assertRegex(report, r'16\\s+literal-pool\\s+24\\n')
-        self.assertRegex(report, r'32init\\s+literal-pool\\s+16\\n')
-        self.assertRegex(report, r'32init\\s+other-rodata\\s+12\\n')
+        self.assertRegex(report, r'16\s+literal-pool\s+24\n')
+        self.assertRegex(report, r'32init\s+literal-pool\s+16\n')
+        self.assertRegex(report, r'32init\s+other-rodata\s+12\n')
         self.assertNotIn('.rodata.unused', report)
         self.assertNotIn('.text.boot', report)
         self.assertIn('.rodata.str1.1.nomerge', report)
