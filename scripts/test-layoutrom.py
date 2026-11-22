@@ -137,6 +137,21 @@ class RomCapacityTests(unittest.TestCase):
         self.assertEqual(len(image), 128 * 1024)
         self.assertIn('Free: 0', report)
 
+    def test_128k_limit_minus_64_is_accepted(self):
+        failed, report, exists, image = self.run_check(131008)
+        self.assertFalse(failed)
+        self.assertTrue(exists)
+        self.assertEqual(len(image), 128 * 1024)
+        self.assertIn('Free: 64', report)
+
+    def test_128k_limit_plus_64_is_rejected(self):
+        failed, report, exists, image = self.run_check(131136)
+        self.assertTrue(failed)
+        self.assertIn("ROM doesn't fit (131136 > 131072)", report)
+        self.assertIn('64 bytes over', report)
+        self.assertFalse(exists)
+        self.assertIsNone(image)
+
     def test_128k_limit_plus_160_is_rejected(self):
         failed, report, exists, image = self.run_check(131232)
         self.assertTrue(failed)
