@@ -286,9 +286,12 @@ tpm20_write_EfiSpecIdEventStruct(void)
     if (!tpm20_pcr_selection)
         return -1;
 
-    struct {
+    // Back the flexible digest array with fixed storage without embedding
+    // its containing structure before another struct member (GNU extension).
+    union {
         struct TCG_EfiSpecIdEventStruct hdr;
-        u8 pad[sizeof(struct tpm_log_entry) + sizeof(u8)];
+        u8 storage[sizeof(struct TCG_EfiSpecIdEventStruct)
+                   + sizeof(struct tpm_log_entry) + sizeof(u8)];
     } event = {
         .hdr.signature = "Spec ID Event03",
         .hdr.platformClass = TPM_TCPA_ACPI_CLASS_CLIENT,
