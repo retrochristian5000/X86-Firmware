@@ -347,6 +347,35 @@ def reportRomStartAlignment(sections, candidate_start, placed_start,
         print("  alignment sources omitted: %d" % (len(sources) - limit))
 
 
+def reportRomStringSections(sections, limit=10):
+    """Inventory ROM read-only sections, without assuming all bytes are text.
+
+    The final linked image may include alignment and relocation padding.
+    A matching string in separate code modes is not necessarily shareable.
+    """
+    retained = [section for section in sections
+                if section.finalloc is not None and section.size > 0
+                and section.name.startswith('.rodata')]
+    totals = {}
+    for section in retained:
+        mode = section.category
+        pool = ('literal-pool' if section.name.startswith('.rodata.str')
+                else 'other-rodata')
+        key = (mode, pool)
+        totals[key] = totals.get(key, 0) + section.size
+
+    print("ROM string audit: retained read-only sections (raw bytes)")
+    for (mode, pool), size in sorted(totals.items()):
+        print("  %-12s %-14s %7d" % (mode, pool, size))
+    print("ROM string audit: largest %d read-only sections" %
+          min(limit, len(retained)))
+    retained.sort(key=lambda section: (
+        -section.size, section.category, section.fileid, section.name))
+    for section in retained[:limit]:
+        print("  %7d  %-12s %-6s %s" %
+              (section.size, section.category, section.fileid, section.name))
+
+
 ######################################################################
 # Linker script output
 ######################################################################
@@ -753,6 +782,7 @@ def main():
     li = doLayout(sections, config, genreloc)
     if os.environ.get('WHP_ROM_SIZE_REPORT') == '1':
         reportRomSectionSizes(li.sections)
+        reportRomStringSections(li.sections)
 
     # Exported symbols
     li.varlowsyms = [symbol for symbol in symbols['32flat'].values()
