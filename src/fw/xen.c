@@ -135,7 +135,7 @@ void xen_hypercall_setup(void)
 // Both Xen setup paths require valid firmware metadata.  Keep the
 // validation and failure path shared rather than emitting two copies.
 // This is only called for the Xen-enabled firmware build.
-static struct xen_seabios_info * __attribute__((noinline))
+static noinline struct xen_seabios_info *
 xen_info_or_panic(void)
 {
     struct xen_seabios_info *info = validate_info();
