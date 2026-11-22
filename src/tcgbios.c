@@ -2233,7 +2233,11 @@ tpm20_menu_change_active_pcrbanks(void)
             case 1: /* ESC */
                 printf("\n");
                 return -1;
-            case 2 ... 6: /* keys 1 .. 5 */
+            case 2: /* key 1 */
+            case 3: /* key 2 */
+            case 4: /* key 3 */
+            case 5: /* key 4 */
+            case 6: /* key 5 */
                 flagnum = scancode - 1;
                 if (flagnum > i)
                     continue;
