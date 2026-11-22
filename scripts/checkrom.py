@@ -53,15 +53,9 @@ def main():
             finalsize = 128*1024
             if datasize > 128*1024:
                 finalsize = 256*1024
-    if datasize > finalsize:
-        print("Error!  ROM doesn't fit (%d > %d)" % (datasize, finalsize))
-        print("   You have to either increase the size (CONFIG_ROM_SIZE)")
-        print("   or turn off some features (such as hardware support not")
-        print("   needed) to make it fit.  Trying a more recent gcc version")
-        print("   might work too.")
-        sys.exit(1)
-
-    # Sanity checks
+    # Check the linked image geometry before interpreting its byte count as
+    # a ROM-budget overrun.  A mismatched binary must not masquerade as a
+    # normal size optimization problem.
     start = symbols['code32flat_start'].offset
     end = symbols['code32flat_end'].offset
     expend = layoutrom.BUILD_BIOS_ADDR + layoutrom.BUILD_BIOS_SIZE
@@ -69,14 +63,17 @@ def main():
         print("Error!  Code does not end at 0x%x (got 0x%x)" % (
             expend, end))
         sys.exit(1)
-    if datasize > finalsize:
-        print("Error!  Code is too big (0x%x vs 0x%x)" % (
-            datasize, finalsize))
-        sys.exit(1)
     expdatasize = end - start
     if datasize != expdatasize:
         print("Error!  Unknown extra data (0x%x vs 0x%x)" % (
             datasize, expdatasize))
+        sys.exit(1)
+    if datasize > finalsize:
+        print("Error!  ROM doesn't fit (%d > %d): %d bytes over" % (
+            datasize, finalsize, datasize - finalsize))
+        print("   Reduce linked ROM bytes or select a larger CONFIG_ROM_SIZE.")
+        print("   Review the compiler flags and retained sections before")
+        print("   disabling firmware features.")
         sys.exit(1)
 
     # A PC BIOS must enter through the fixed far jump at 0xffff0.  Verify the

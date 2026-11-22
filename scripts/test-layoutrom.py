@@ -3,7 +3,10 @@
 
 import contextlib
 import io
+import os
+import tempfile
 import unittest
+from unittest import mock
 
 import checkrom
 import layoutrom
@@ -77,6 +80,85 @@ class ResetVectorTests(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, '0xffff0'):
             checkrom.checkResetVector(rawdata, 0xfffe0, symbols)
+
+
+
+class RomCapacityTests(unittest.TestCase):
+    def run_check(self, actual_size, linked_size=None, rom_kib=128):
+        # Build a synthetic linked binary with a valid reset vector at the
+        # architectural address, and stub only the objdump text parser.
+        if linked_size is None:
+            linked_size = actual_size
+        end = layoutrom.BUILD_BIOS_ADDR + layoutrom.BUILD_BIOS_SIZE
+        start = end - linked_size
+        symbols = {
+            'code32flat_start': StubSymbol(start),
+            'code32flat_end': StubSymbol(end),
+            'code32init_end': StubSymbol(end - 4096),
+            'reset_vector': StubSymbol(checkrom.RESET_VECTOR_ADDR),
+        }
+        image = bytearray(actual_size)
+        resetoff = checkrom.RESET_VECTOR_ADDR - start
+        if 0 <= resetoff <= len(image) - len(checkrom.RESET_VECTOR_DATA):
+            image[resetoff:resetoff + len(checkrom.RESET_VECTOR_DATA)] = (
+                checkrom.RESET_VECTOR_DATA)
+
+        with tempfile.TemporaryDirectory() as directory:
+            objdump = os.path.join(directory, 'rom.objdump')
+            raw = os.path.join(directory, 'bios.bin.raw')
+            output = os.path.join(directory, 'bios.bin.prep')
+            with open(objdump, 'w', encoding='ascii') as f:
+                f.write('')
+            with open(raw, 'wb') as f:
+                f.write(image)
+            stdout = io.StringIO()
+            argv = ['checkrom.py', objdump, str(rom_kib), raw, output]
+            with mock.patch.object(checkrom.layoutrom, 'parseObjDump',
+                                   return_value=(None, symbols)):
+                with mock.patch.object(checkrom.sys, 'argv', argv):
+                    with contextlib.redirect_stdout(stdout):
+                        try:
+                            checkrom.main()
+                            failed = False
+                        except SystemExit as error:
+                            self.assertEqual(error.code, 1)
+                            failed = True
+            exists = os.path.exists(output)
+            binary = None
+            if exists:
+                with open(output, 'rb') as f:
+                    binary = f.read()
+            return failed, stdout.getvalue(), exists, binary
+
+    def test_exact_128k_limit_is_accepted(self):
+        failed, report, exists, image = self.run_check(128 * 1024)
+        self.assertFalse(failed)
+        self.assertTrue(exists)
+        self.assertEqual(len(image), 128 * 1024)
+        self.assertIn('Free: 0', report)
+
+    def test_128k_limit_plus_160_is_rejected(self):
+        failed, report, exists, image = self.run_check(131232)
+        self.assertTrue(failed)
+        self.assertIn("ROM doesn't fit (131232 > 131072)", report)
+        self.assertIn('160 bytes over', report)
+        self.assertFalse(exists)
+        self.assertIsNone(image)
+
+    def test_mismatched_image_is_not_misreported_as_overfill(self):
+        failed, report, exists, _ = self.run_check(
+            131232, linked_size=131072)
+        self.assertTrue(failed)
+        self.assertIn('Unknown extra data', report)
+        self.assertNotIn("ROM doesn't fit", report)
+        self.assertFalse(exists)
+
+    def test_auto_rom_size_selects_256k_for_overflow(self):
+        failed, report, exists, image = self.run_check(131232, rom_kib=0)
+        self.assertFalse(failed)
+        self.assertTrue(exists)
+        self.assertEqual(len(image), 256 * 1024)
+        self.assertIn('of 256KiB rom', report)
 
 
 if __name__ == '__main__':
