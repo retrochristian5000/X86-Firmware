@@ -224,8 +224,10 @@ u16 ascii_to_keycode(u8 ascii);
 
 // misc.c
 extern int HaveRunPost;
-extern struct bios_config_table_s BIOS_CONFIG_TABLE __aligned(1);
-extern struct floppy_dbt_s diskette_param_table __aligned(1);
+// The fixed ROM definitions in misc.c enforce byte alignment via
+// VARFSEGFIXED; no alignment attribute is needed on extern declarations.
+extern struct bios_config_table_s BIOS_CONFIG_TABLE;
+extern struct floppy_dbt_s diskette_param_table;
 extern u8 BiosChecksum;
 int in_post(void);
 void mathcp_setup(void);
