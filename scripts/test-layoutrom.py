@@ -74,6 +74,32 @@ class RomSizeReportTests(unittest.TestCase):
         self.assertEqual(positions, [section.finalloc for section in sections])
 
 
+class RomStringReportTests(unittest.TestCase):
+    def test_retained_read_only_sections_are_grouped_by_code_mode(self):
+        sections = [
+            StubSection('.rodata.str1.1.nomerge', 0x1000, 0, '16', 24, '16'),
+            StubSection('.rodata.flags', 0x2000, 0, '32flat', 12, '32init'),
+            StubSection('.rodata.str1.1.nomerge', 0x3000, 0, '32flat',
+                        16, '32init'),
+            StubSection('.rodata.unused', None, None, '32flat', 90, '32init'),
+            StubSection('.text.boot', 0x4000, 0, '16', 500, '16'),
+        ]
+        before = [section.finalloc for section in sections]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            layoutrom.reportRomStringSections(sections, limit=2)
+
+        report = output.getvalue()
+        self.assertIn('ROM string audit: retained read-only sections', report)
+        self.assertRegex(report, r'16\\s+literal-pool\\s+24\\n')
+        self.assertRegex(report, r'32init\\s+literal-pool\\s+16\\n')
+        self.assertRegex(report, r'32init\\s+other-rodata\\s+12\\n')
+        self.assertNotIn('.rodata.unused', report)
+        self.assertNotIn('.text.boot', report)
+        self.assertIn('.rodata.str1.1.nomerge', report)
+        self.assertEqual(before, [section.finalloc for section in sections])
+
+
 class RomAlignmentReportTests(unittest.TestCase):
     def test_start_padding_identifies_highest_aligned_sections(self):
         sections = [
