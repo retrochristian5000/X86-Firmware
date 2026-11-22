@@ -326,6 +326,27 @@ def reportRomSectionSizes(sections, limit=12):
             section.size, section.category, section.fileid, section.name))
 
 
+def reportRomStartAlignment(sections, candidate_start, placed_start,
+                            align, relocation_bytes, header_bytes, limit=8):
+    """Explain the ROM-start padding imposed by retained ELF sections.
+
+    These measurements do not change the linker script or section locations.
+    The padding is only the difference introduced by the final align-down,
+    not the complete difference between raw input sections and ROM bytes.
+    """
+    padding = candidate_start - placed_start
+    print("ROM alignment audit: boundary=%d padding=%d "
+          "relocations=%d multiboot=%d" % (
+              align, padding, relocation_bytes, header_bytes))
+    sources = [section for section in sections if section.align == align]
+    sources.sort(key=lambda section: (section.fileid, section.name))
+    for section in sources[:limit]:
+        print("  alignment source: %-6s %s" % (
+            section.fileid, section.name))
+    if len(sources) > limit:
+        print("  alignment sources omitted: %d" % (len(sources) - limit))
+
+
 ######################################################################
 # Linker script output
 ######################################################################
@@ -419,6 +440,7 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
     # Write 32flat linker script
     sec32all_start = li.sec32low_start
     relocstr = ""
+    numrelocs = 0
     if li.genreloc:
         # Generate relocations
         initsections = dict([
@@ -440,8 +462,13 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
     if li.config.get('CONFIG_MULTIBOOT'):
         multiboot_header = "LONG(0x1BADB002) LONG(0) LONG(-0x1BADB002)"
         sec32all_start -= 3 * 4
+    candidate_start = sec32all_start
     sec32all_align = max([section.align for section in li.sections])
     sec32all_start = aligndown(sec32all_start, sec32all_align)
+    if os.environ.get('WHP_ROM_SIZE_REPORT') == '1':
+        reportRomStartAlignment(
+            li.sections, candidate_start, sec32all_start, sec32all_align,
+            numrelocs * 4, 12 if multiboot_header else 0)
     out += outXRefs(filesections32flat, exportsyms=[li.entrysym]) + """
     _reloc_min_align = 0x%x ;
     zonefseg_start = 0x%x ;
