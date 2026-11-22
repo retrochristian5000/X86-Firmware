@@ -132,23 +132,14 @@ void xen_hypercall_setup(void)
     dprintf(1, "Detected Xen v%u.%u%s\n", eax >> 16, eax & 0xffff, extraversion);
 }
 
-// Both Xen setup paths require valid firmware metadata.  Keep the
-// validation and failure path shared rather than emitting two copies.
-// This is only called for the Xen-enabled firmware build.
-static noinline struct xen_seabios_info *
-xen_info_or_panic(void)
-{
-    struct xen_seabios_info *info = validate_info();
-    if (!info)
-        panic("Xen info corrupted\n");
-    return info;
-}
-
 void xen_biostable_setup(void)
 {
-    struct xen_seabios_info *info = xen_info_or_panic();
+    struct xen_seabios_info *info = validate_info();
     void **tables;
     int i;
+
+    if (!info)
+        panic("Xen info corrupted\n");
 
     tables = (void*)info->tables;
     dprintf(1, "xen: copy BIOS tables...\n");
@@ -161,8 +152,11 @@ void xen_biostable_setup(void)
 void xen_ramsize_preinit(void)
 {
     int i;
-    struct xen_seabios_info *info = xen_info_or_panic();
+    struct xen_seabios_info *info = validate_info();
     struct e820entry *e820;
+
+    if (!info)
+        panic("Xen info corrupted\n");
 
     dprintf(1, "xen: copy e820...\n");
 
