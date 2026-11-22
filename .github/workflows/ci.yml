@@ -68,6 +68,12 @@ jobs:
       - name: Verify CSM ABI packing boundaries
         run: cc -std=c11 -Wall -Wextra -Werror -Isrc -fsyntax-only scripts/test-legacybios-pack.c
 
+      - name: Verify firmware declaration attributes
+        run: |
+          cc -std=gnu11 -Wall -Wextra -Werror -Wreturn-type \
+            -Wignored-attributes -Isrc -fsyntax-only \
+            scripts/test-util-attributes.c
+
       - name: Build SeaBIOS
         run: WHP_ROM_SIZE_REPORT=1 make -j2
 

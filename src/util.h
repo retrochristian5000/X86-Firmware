@@ -261,7 +261,7 @@ void interface_init(void);
 void device_hardware_setup(void);
 void prepareboot(void);
 void startBoot(void);
-void reloc_preinit(void *f, void *arg);
+void reloc_preinit(void *f, void *arg) __noreturn;
 void code_mutable_preinit(void);
 
 // sercon.c
