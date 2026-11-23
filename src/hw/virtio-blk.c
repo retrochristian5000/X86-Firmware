@@ -15,10 +15,10 @@
 #include "pcidevice.h" // foreachpci
 #include "pci_ids.h" // PCI_DEVICE_ID_VIRTIO_BLK
 #include "pci_regs.h" // PCI_VENDOR_ID
-#include "stacks.h" // run_thread
+#include "stacks.h" // run_thread, yield
 #include "std/disk.h" // DISK_RET_SUCCESS
 #include "string.h" // memset
-#include "util.h" // usleep, bootprio_find_pci_device, is_bootprio_strict
+#include "util.h" // bootprio_find_pci_device, is_bootprio_strict
 #include "virtio-pci.h"
 #include "virtio-mmio.h"
 #include "virtio-ring.h"
@@ -48,9 +48,9 @@ virtio_blk_op_one_segment(struct virtiodrive_s *vdrive,
         vring_add_buf(vq, sg, 1, 2, 0, 0);
     vring_kick(&vdrive->vp, vq, 1);
 
-    /* Wait for reply */
+    /* Poll completion without a fixed delay between ready checks. */
     while (!vring_more_used(vq))
-        usleep(5);
+        yield();
 
     /* Reclaim virtqueue element */
     vring_get_buf(vq, NULL);
