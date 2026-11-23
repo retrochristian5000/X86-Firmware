@@ -376,6 +376,33 @@ def reportRomStringSections(sections, limit=10):
               (section.size, section.category, section.fileid, section.name))
 
 
+STRING_HELPERS = frozenset((
+    'strlen', 'strcmp', 'strchr', 'strtcpy', 'nullTrailingSpace',
+    'memcmp', 'memcmp_far', 'memcpy', 'memcpy_far', 'memmove', 'memset',
+    'memset_far', 'bvprintf', 'puts', 'puts_cs', 'putuint', 'puthex',
+    'snprintf', 'znprintf',
+))
+
+
+def reportRomStringCode(sections):
+    """Show retained string/formatting helper code, not potential savings."""
+    matches = []
+    for section in sections:
+        if section.finalloc is None or section.size <= 0:
+            continue
+        if not section.name.startswith('.text.'):
+            continue
+        helper = section.name[len('.text.'):].split('.')[0]
+        if helper in STRING_HELPERS:
+            matches.append(section)
+    matches.sort(key=lambda item: (
+        -item.size, item.category, item.fileid, item.name))
+    print("ROM string audit: retained string and format helper code")
+    for section in matches:
+        print("  %7d  %-12s %-6s %s" %
+              (section.size, section.category, section.fileid, section.name))
+
+
 ######################################################################
 # Linker script output
 ######################################################################
@@ -783,6 +810,7 @@ def main():
     if os.environ.get('WHP_ROM_SIZE_REPORT') == '1':
         reportRomSectionSizes(li.sections)
         reportRomStringSections(li.sections)
+        reportRomStringCode(li.sections)
 
     # Exported symbols
     li.varlowsyms = [symbol for symbol in symbols['32flat'].values()
