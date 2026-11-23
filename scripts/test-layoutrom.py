@@ -74,6 +74,25 @@ class RomSizeReportTests(unittest.TestCase):
         self.assertEqual(positions, [section.finalloc for section in sections])
 
 
+class RomStringCodeTests(unittest.TestCase):
+    def test_report_excludes_unreferenced_helpers_and_non_string_code(self):
+        sections = [
+            StubSection('.text.strlen', 0x1000, 0, '16', 34, '16'),
+            StubSection('.text.memcpy', 0x2000, 0, '32flat', 27, '32flat'),
+            StubSection('.text.memmove', None, None, '32flat', 90, '32flat'),
+            StubSection('.text.not_a_helper', 0x3000, 0, '16', 500, '16'),
+        ]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            layoutrom.reportRomStringCode(sections)
+        report = output.getvalue()
+        self.assertIn('.text.strlen', report)
+        self.assertIn('.text.memcpy', report)
+        self.assertNotIn('.text.memmove', report)
+        self.assertNotIn('.text.not_a_helper', report)
+        self.assertLess(report.index('.text.strlen'), report.index('.text.memcpy'))
+
+
 class RomStringReportTests(unittest.TestCase):
     def test_retained_read_only_sections_are_grouped_by_code_mode(self):
         sections = [
