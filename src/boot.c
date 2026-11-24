@@ -654,6 +654,14 @@ get_raw_keystroke(void)
 int
 get_keystroke_full(int msec)
 {
+    // A zero timeout is a poll, including when draining the BIOS key queue.
+    // Do not halt for a PIT tick just to report that no key is available.
+    if (!msec) {
+        if (check_for_keystroke())
+            return get_raw_keystroke();
+        return -1;
+    }
+
     u32 end = irqtimer_calc(msec);
     for (;;) {
         if (check_for_keystroke())

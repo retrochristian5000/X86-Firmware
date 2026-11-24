@@ -34,16 +34,22 @@
 static inline int
 await_ide(u8 mask, u8 flags, u16 base, u16 timeout)
 {
+    // Most emulated devices are already ready when the caller polls.
+    // Avoid reading the firmware timer unless we actually have to wait.
+    u8 status = inb(base+ATA_CB_STAT);
+    if ((status & mask) == flags)
+        return status;
+
     u32 end = timer_calc(timeout);
     for (;;) {
-        u8 status = inb(base+ATA_CB_STAT);
-        if ((status & mask) == flags)
-            return status;
         if (timer_check(end)) {
             warn_timeout();
             return -1;
         }
         yield();
+        status = inb(base+ATA_CB_STAT);
+        if ((status & mask) == flags)
+            return status;
     }
 }
 
