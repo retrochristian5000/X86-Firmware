@@ -149,9 +149,19 @@ u8 pci_find_capability(u16 bdf, u8 cap_id, u8 cap)
         cap = pci_config_readb(bdf, cap + PCI_CAP_LIST_NEXT);
     }
     for (i = 0; cap && i <= 0xff; i++) {
-        if (pci_config_readb(bdf, cap + PCI_CAP_LIST_ID) == cap_id)
-            return cap;
-        cap = pci_config_readb(bdf, cap + PCI_CAP_LIST_NEXT);
+        // A conventional PCI capability starts with two adjacent bytes:
+        // the capability ID and the next pointer. Read the aligned header
+        // in one transaction, preserving byte reads for malformed pointers.
+        if (cap >= 0x40 && !(cap & 3)) {
+            u16 header = pci_config_readw(bdf, cap);
+            if ((u8)header == cap_id)
+                return cap;
+            cap = header >> 8;
+        } else {
+            if (pci_config_readb(bdf, cap + PCI_CAP_LIST_ID) == cap_id)
+                return cap;
+            cap = pci_config_readb(bdf, cap + PCI_CAP_LIST_NEXT);
+        }
     }
 
     return 0;
