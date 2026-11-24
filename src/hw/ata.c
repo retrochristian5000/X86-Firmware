@@ -292,18 +292,21 @@ ata_pio_transfer(struct disk_op_s *op, int iswrite, int blocksize)
     int count = op->count;
     void *buf_fl = op->buf_fl;
     int status;
+    // ATAPI responses need not be a multiple of four bytes. Preserve
+    // the complete word transfer instead of truncating its final word.
+    int pio32 = CONFIG_ATA_PIO32 && !(blocksize & 3);
     for (;;) {
         if (iswrite) {
             // Write data to controller
             dprintf(16, "Write sector id=%p dest=%p\n", op->drive_fl, buf_fl);
-            if (CONFIG_ATA_PIO32)
+            if (pio32)
                 outsl_fl(iobase1, buf_fl, blocksize / 4);
             else
                 outsw_fl(iobase1, buf_fl, blocksize / 2);
         } else {
             // Read data from controller
             dprintf(16, "Read sector id=%p dest=%p\n", op->drive_fl, buf_fl);
-            if (CONFIG_ATA_PIO32)
+            if (pio32)
                 insl_fl(iobase1, buf_fl, blocksize / 4);
             else
                 insw_fl(iobase1, buf_fl, blocksize / 2);
@@ -430,19 +433,21 @@ ata_dma_transfer(struct disk_op_s *op)
     u8 oldcmd = inb(iomaster + BM_CMD);
     outb(oldcmd | BM_CMD_START, iomaster + BM_CMD);
 
-    u32 end = timer_calc(IDE_TIMEOUT);
-    u8 status;
-    for (;;) {
-        status = inb(iomaster + BM_STATUS);
-        if (status & BM_STATUS_IRQ)
-            break;
-        // Transfer in progress
-        if (timer_check(end)) {
-            // Timeout.
-            warn_timeout();
-            break;
+    // A bus-master error can stop DMA without raising an interrupt.
+    // Also avoid timer setup when the controller has already finished.
+    u8 status = inb(iomaster + BM_STATUS);
+    if (!(status & (BM_STATUS_IRQ | BM_STATUS_ERROR))) {
+        u32 end = timer_calc(IDE_TIMEOUT);
+        for (;;) {
+            if (timer_check(end)) {
+                warn_timeout();
+                break;
+            }
+            yield();
+            status = inb(iomaster + BM_STATUS);
+            if (status & (BM_STATUS_IRQ | BM_STATUS_ERROR))
+                break;
         }
-        yield();
     }
     outb(oldcmd & ~BM_CMD_START, iomaster + BM_CMD);
 
@@ -450,7 +455,8 @@ ata_dma_transfer(struct disk_op_s *op)
     u16 iobase2 = GET_GLOBALFLAT(chan_gf->iobase2);
     int idestatus = pause_await_not_bsy(iobase1, iobase2);
 
-    if ((status & (BM_STATUS_IRQ|BM_STATUS_ACTIVE)) == BM_STATUS_IRQ
+    if ((status & (BM_STATUS_IRQ | BM_STATUS_ACTIVE | BM_STATUS_ERROR))
+        == BM_STATUS_IRQ
         && idestatus >= 0x00
         && (idestatus & (ATA_CB_STAT_BSY | ATA_CB_STAT_DF | ATA_CB_STAT_DRQ
                          | ATA_CB_STAT_ERR)) == 0x00)
@@ -960,7 +966,9 @@ init_controller(struct pci_device *pci, int chanid, int irq
 static void
 init_pciata(struct pci_device *pci, u8 prog_if)
 {
-    u8 pciirq = pci_config_readb(pci->bdf, PCI_INTERRUPT_LINE);
+    // Compatibility-mode channels use fixed ISA interrupts.
+    u8 pciirq = (prog_if & 5)
+        ? pci_config_readb(pci->bdf, PCI_INTERRUPT_LINE) : 0;
     int master = 0;
     if (CONFIG_ATA_DMA && prog_if & 0x80) {
         // Check for bus-mastering.
