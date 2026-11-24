@@ -296,21 +296,33 @@ maininit(void)
                         && romfile_find("opt/org.seabios/whp-extended-post") != NULL;
     u32 post_last = post_timing ? timer_calc(0) : 0;
 
-    // Start hardware initialization (if threads allowed during optionroms)
-    if (threads_during_optionroms())
-        device_hardware_setup();
+    // Keep the normal ordering unless display-first POST is requested.
+    // PCI resources, platform timers and TPM setup are already available.
+    // With etc/threads=2, defer device discovery until the console is visible
+    // but still permit its threads to run during later option ROMs.
+    int parallel = threads_during_optionroms();
+    int early_display = parallel && CONFIG_QEMU
+        && romfile_loadbool("opt/org.seabios/whp-early-display", 0);
 
-    // Run vga option rom
-    vgarom_setup();
-    sercon_setup();
-    enable_vga_console();
-    post_timing_log(post_timing, &post_last, "video / early hardware");
-
-    // Do hardware initialization (if running synchronously)
-    if (!threads_during_optionroms()) {
+    if (parallel && !early_display) {
         device_hardware_setup();
-        wait_threads();
+        post_timing_log(post_timing, &post_last, "early device setup");
     }
+
+    // Run VGA option ROM and establish the first usable console.
+    vgarom_setup();
+    post_timing_log(post_timing, &post_last, "VGA option ROM");
+    sercon_setup();
+    post_timing_log(post_timing, &post_last, "serial console");
+    enable_vga_console();
+    post_timing_log(post_timing, &post_last, "VGA console mode / banner");
+
+    // Start deferred hardware discovery exactly once. Only the normal
+    // non-preemptive path must wait here before executing option ROMs.
+    if (!parallel || early_display)
+        device_hardware_setup();
+    if (!parallel)
+        wait_threads();
     post_timing_log(post_timing, &post_last, "device setup");
 
     // Run option roms
