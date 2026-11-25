@@ -218,6 +218,30 @@ ehci_free_pipes(struct usb_ehci_s *cntl)
     }
 }
 
+// Stop schedule execution before reset or releasing schedule memory.
+// EHCI requires halt within 16 microframes (2 ms); allow a 4 ms
+// firmware polling deadline, not an unconditional delay.
+static int
+ehci_halt(struct usb_ehci_s *cntl)
+{
+    u32 cmd = readl(&cntl->regs->usbcmd);
+    if (cmd & CMD_RUN)
+        writel(&cntl->regs->usbcmd, cmd & ~CMD_RUN);
+    if (readl(&cntl->regs->usbsts) & STS_HALT)
+        return 0;
+
+    u32 end = timer_calc(4);
+    for (;;) {
+        if (readl(&cntl->regs->usbsts) & STS_HALT)
+            return 0;
+        if (timer_check(end)) {
+            warn_timeout();
+            return -1;
+        }
+        yield();
+    }
+}
+
 static void
 configure_ehci(void *data)
 {
@@ -233,7 +257,11 @@ configure_ehci(void *data)
         goto fail;
     }
 
-    // XXX - check for halted?
+    // Reset is only defined while the controller is halted.
+    if (ehci_halt(cntl)) {
+        PendingEHCI--;
+        goto fail;
+    }
 
     // Reset the HC
     u32 cmd = readl(&cntl->regs->usbcmd);
@@ -288,9 +316,11 @@ configure_ehci(void *data)
         // Success
         return;
 
-    // No devices found - shutdown and free controller.
-    writel(&cntl->regs->usbcmd, cmd & ~CMD_RUN);
-    msleep(4);  // 2ms to stop reading memory - XXX
+    // No devices found - stop DMA before freeing schedule memory.
+    if (ehci_halt(cntl)) {
+        dprintf(1, "EHCI halt timed out; retaining schedule memory\n");
+        return;
+    }
 fail:
     free(fl);
     free(intr_qh);
