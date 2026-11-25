@@ -978,10 +978,14 @@ boot_disk(u8 bootdrv, int checksig)
 {
     u16 bootseg = 0x07c0;
 
-    // Read sector
+    // Do not accept a signature left by a previous boot attempt.
+    struct mbr_s *mbr = (void*)0;
+    SET_FARVAR(bootseg, mbr->signature, 0);
+
+    // Read sector. Require the INT 13h handler to report success.
     struct bregs br;
     memset(&br, 0, sizeof(br));
-    br.flags = F_IF;
+    br.flags = F_IF | F_CF;
     br.dl = bootdrv;
     br.es = bootseg;
     br.ah = 2;
@@ -995,7 +999,6 @@ boot_disk(u8 bootdrv, int checksig)
     }
 
     if (checksig) {
-        struct mbr_s *mbr = (void*)0;
         if (GET_FARVAR(bootseg, mbr->signature) != MBR_SIGNATURE) {
             printf("Boot failed: not a bootable disk\n\n");
             return;
