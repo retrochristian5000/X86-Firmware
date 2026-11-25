@@ -596,6 +596,68 @@ ata_process_op(struct disk_op_s *op)
  ****************************************************************/
 
 #define CDROM_CDB_SIZE 12
+/* 31 optical blocks fit below the ATA/ATAPI-4 byte count ceiling and
+ * leave room for the initial segment offset in 16-bit string I/O. */
+#define ATAPI_PIO_LIMIT (31 * CDROM_SECTOR_SIZE)
+#define ATAPI_REASON_MASK (ATA_CB_SC_P_REL | ATA_CB_SC_P_IO | ATA_CB_SC_P_CD)
+
+// ATA/ATAPI-4 (T13/1153D rev 17), sections 8.21.5 and 9.11.
+// The device, not the disk block size, determines each PIO data phase.
+static int
+atapi_read_phases(struct disk_op_s *op, int blocksize, u16 limit,
+                  u16 iobase1, u16 iobase2)
+{
+    u32 remaining = (u32)op->count * blocksize;
+    u8 *buf_fl = op->buf_fl;
+    u32 transferred = 0;
+
+    for (;;) {
+        int status = pause_await_not_bsy(iobase1, iobase2);
+        if (status < 0)
+            break;
+        if (status & ATA_CB_STAT_CHK) {
+            u8 err = inb(iobase1 + ATA_CB_ERR);
+            if (err != 0x20)
+                dprintf(6, "ATAPI command failed (status=%02x error=%02x)\n",
+                        status, err);
+            break;
+        }
+
+        u8 reason = inb(iobase1 + ATA_CB_SC) & ATAPI_REASON_MASK;
+        if (!(status & ATA_CB_STAT_DRQ)) {
+            if (!remaining && reason == (ATA_CB_SC_P_IO | ATA_CB_SC_P_CD))
+                return 0;
+            break;
+        }
+        if (reason != ATA_CB_SC_P_IO)
+            break;
+
+        u16 bytes = inb(iobase1 + ATA_CB_CL);
+        bytes |= (u16)inb(iobase1 + ATA_CB_CH) << 8;
+        if (!bytes || bytes > limit || bytes > remaining ||
+            ((bytes & 1) && bytes != remaining))
+            break;
+
+        if (CONFIG_ATA_PIO32 && !(bytes & 3))
+            insl_fl(iobase1, buf_fl, bytes / 4);
+        else {
+            if (bytes / 2)
+                insw_fl(iobase1, buf_fl, bytes / 2);
+            if (bytes & 1) {
+                // Only the low byte of the final word belongs to the caller.
+                u8 last = inw(iobase1);
+                SET_FLATPTR(buf_fl[bytes - 1], last);
+            }
+        }
+        buf_fl += bytes;
+        remaining -= bytes;
+        transferred += bytes;
+    }
+
+    // Report only complete blocks; never claim a successful short read.
+    op->count = blocksize ? transferred / blocksize : 0;
+    return -1;
+}
 
 // Low-level atapi command transmit function.
 int
@@ -617,10 +679,17 @@ ata_atapi_process_op(struct disk_op_s *op)
     u16 iobase1 = GET_GLOBALFLAT(chan_gf->iobase1);
     u16 iobase2 = GET_GLOBALFLAT(chan_gf->iobase2);
 
+    u32 total = (u32)op->count * blocksize;
+    if (total > 64 * 1024 || (total && !op->buf_fl))
+        return DISK_RET_EPARAM;
+    if (op->command == CMD_READ && !op->count)
+        return DISK_RET_SUCCESS;
+
+    u16 limit = total > ATAPI_PIO_LIMIT ? ATAPI_PIO_LIMIT : total;
     struct ata_pio_command cmd;
     memset(&cmd, 0, sizeof(cmd));
-    cmd.lba_mid = blocksize;
-    cmd.lba_high = blocksize >> 8;
+    cmd.lba_mid = limit;
+    cmd.lba_high = limit >> 8;
     cmd.command = ATA_CMD_PACKET;
 
     // Disable interrupts
@@ -633,38 +702,15 @@ ata_atapi_process_op(struct disk_op_s *op)
     if (ret)
         goto fail;
 
-    // Send command to device
-    outsw_fl(iobase1, MAKE_FLATPTR(GET_SEG(SS), cdbcmd), CDROM_CDB_SIZE / 2);
-
-    int status = pause_await_not_bsy(iobase1, iobase2);
-    if (status < 0) {
-        ret = status;
-        goto fail;
-    }
-
-    if (status & ATA_CB_STAT_ERR) {
-        u8 err = inb(iobase1 + ATA_CB_ERR);
-        // skip "Not Ready"
-        if (err != 0x20)
-            dprintf(6, "send_atapi_cmd : read error (status=%02x err=%02x)\n"
-                    , status, err);
-        ret = -2;
-        goto fail;
-    }
-    if (blocksize) {
-        if (!(status & ATA_CB_STAT_DRQ)) {
-            dprintf(6, "send_atapi_cmd : DRQ not set (status %02x)\n", status);
-            ret = -3;
-            goto fail;
-        }
-
-        ret = ata_pio_transfer(op, 0, blocksize);
-    } else if (status & ATA_CB_STAT_DRQ) {
-        // A non-data packet must finish without requesting a data phase.
-        dprintf(6, "send_atapi_cmd : unexpected data phase (status %02x)\n",
-                status);
+    if ((inb(iobase1 + ATA_CB_SC) & ATAPI_REASON_MASK) != ATA_CB_SC_P_CD) {
+        dprintf(6, "ATAPI device did not request a command packet\n");
         ret = -3;
+        goto fail;
     }
+
+    // Send command to device, then follow its reported data phases.
+    outsw_fl(iobase1, MAKE_FLATPTR(GET_SEG(SS), cdbcmd), CDROM_CDB_SIZE / 2);
+    ret = atapi_read_phases(op, blocksize, limit, iobase1, iobase2);
 
 fail:
     // Enable interrupts
