@@ -13,7 +13,7 @@ import sys
 import re
 
 # Functions that change stacks
-STACKHOP = ['stack_hop', 'stack_hop_back']
+STACKHOP = ['stack_hop', 'stack_hop_back', '__stack_hop', '__stack_hop_back']
 # List of functions we can assume are never called.
 #IGNORE = ['panic', '__dprintf']
 IGNORE = ['panic']
@@ -164,7 +164,11 @@ def main():
         insnaddr = m.group('insnaddr')
         calladdr = m.group('calladdr')
         if calladdr is None:
-            if insn.startswith('lcallw'):
+            if insn.startswith('calll'):
+                cur.noteCall(insnaddr, -1, stackusage + 4)
+            elif insn.startswith('callw'):
+                cur.noteCall(insnaddr, -1, stackusage + 2)
+            elif insn.startswith('lcallw'):
                 cur.noteCall(insnaddr, -1, stackusage + 4)
                 cur.noteYield(stackusage + 4)
             elif insn.startswith('int'):
