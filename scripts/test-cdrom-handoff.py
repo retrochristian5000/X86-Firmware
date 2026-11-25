@@ -176,4 +176,23 @@ with tempfile.TemporaryDirectory(prefix="seabios-cdrom-handoff-") as temp:
                     str(program), "-o", str(binary)], check=True)
     subprocess.run([str(binary)], check=True)
 
-print("SeaBIOS El Torito handoff: 8 cases passed")
+# Verify that boot registration no longer accesses removable media, and
+# that the optional label lookup is only reached after opening the menu.
+boot = (ROOT / "src/boot.c").read_text(encoding="utf-8")
+registration = boot[boot.index("void\nboot_add_cd("):
+                    boot.index("// Add a CBFS payload entry")]
+assert "cdrom_media_info(" not in registration
+assert "bootentry_add(IPL_TYPE_CDROM" in registration
+menu = boot[boot.index("void\ninteractive_bootmenu("):
+            boot.index("// BEV (Boot Execution Vector) list")]
+label = menu.index("cdrom_media_info(pos->drive)")
+assert menu.index("if (scan_code != menukey)") < label
+assert menu.index("wait_threads();") < label
+assert menu.index("maxmenu >= ARRAY_SIZE(menuchars)") < label
+assert menu.index("pos->type == IPL_TYPE_CDROM") < label
+assert menu.index("PF_QEMU", menu.index("pos->type == IPL_TYPE_CDROM")) < label
+assert "free(labelled);" in menu[label:]
+assert "buffer[40 + 32] = 0;" in source[end:]
+assert "if (volume)\n        nullTrailingSpace(volume);" in source[end:]
+
+print("SeaBIOS El Torito handoff: 8 cases passed; lazy menu labels checked")

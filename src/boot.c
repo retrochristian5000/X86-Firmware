@@ -600,16 +600,8 @@ boot_add_hd(struct drive_s *drive, const char *desc, int prio)
 void
 boot_add_cd(struct drive_s *drive, const char *desc, int prio)
 {
-    if (GET_GLOBAL(PlatformRunningOn) & PF_QEMU) {
-        // We want short boot times.  But on physical hardware even
-        // the test unit ready can take several seconds.  So do media
-        // access on qemu only, where we know it will be fast.
-        char *extra = cdrom_media_info(drive);
-        if (extra) {
-            desc = znprintf(MAXDESCSIZE, "%s (%s)", desc, extra);
-            free(extra);
-        }
-    }
+    // Register the drive without touching removable media.  Only the
+    // interactive menu needs a volume label; booting validates it afresh.
     bootentry_add(IPL_TYPE_CDROM, defPrio(prio, DefaultCDPrio)
                   , (u32)drive, desc);
 }
@@ -835,8 +827,23 @@ interactive_bootmenu(void)
         if (maxmenu >= ARRAY_SIZE(menuchars)) {
             break;
         }
+        const char *description = pos->description;
+        char *labelled = NULL;
+        // Avoid optical media I/O during unattended POST.  Keep the
+        // existing physical-hardware policy: even readiness may be slow.
+        if (pos->type == IPL_TYPE_CDROM
+            && (GET_GLOBAL(PlatformRunningOn) & PF_QEMU)) {
+            char *extra = cdrom_media_info(pos->drive);
+            if (extra) {
+                labelled = znprintf(MAXDESCSIZE, "%s (%s)", description, extra);
+                free(extra);
+                if (labelled)
+                    description = labelled;
+            }
+        }
         printf("%c. %s\n", menuchars[maxmenu]
-               , strtcpy(desc, pos->description, ARRAY_SIZE(desc)));
+               , strtcpy(desc, description, ARRAY_SIZE(desc)));
+        free(labelled);
         maxmenu++;
     }
     if (tpm_can_show_menu()) {

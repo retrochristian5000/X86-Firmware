@@ -337,8 +337,11 @@ cdrom_media_info(struct drive_s *drive)
     if (ret || dop.count != 1)
         return NULL;
 
-    // Read volume id, trim trailing spaces
+    // The ISO 9660 volume identifier occupies exactly 32 bytes.
+    // Do not scan the following descriptor fields as part of the label.
+    buffer[40 + 32] = 0;
     char *volume = znprintf(30, "%s", buffer + 40);
-    nullTrailingSpace(volume);
+    if (volume)
+        nullTrailingSpace(volume);
     return volume;
 }
