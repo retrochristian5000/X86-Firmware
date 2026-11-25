@@ -209,3 +209,71 @@ with tempfile.TemporaryDirectory(prefix="seabios-atapi-phases-") as temp:
     subprocess.run([str(binary)], check=True)
 
 print("ATA/ATAPI-4 PIO phase checks passed")
+
+
+# READ(10) uses a padded 16-byte struct, but must fit a 12-byte packet.
+# READ(16) must be rejected before writing any bytes into that packet.
+blockcmd = (ROOT / "src/hw/blockcmd.c").read_text(encoding="utf-8")
+start = blockcmd.index("int\nscsi_fill_cmd(")
+end = blockcmd.index("// Determine if the command", start)
+header = (ROOT / "src/hw/blockcmd.h").read_text(encoding="utf-8")
+header = header.replace('#include "types.h" // u8', "")
+cdb_test = r"""
+#include <assert.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <string.h>
+typedef uint8_t u8;
+typedef uint16_t u16;
+typedef uint32_t u32;
+typedef uint64_t u64;
+#define PACKED __attribute__((packed))
+#define MODESEGMENT 0
+#define CMD_READ 2
+#define CMD_WRITE 3
+#define CMD_SCSI 0x20
+#define GET_FLATPTR(p) (p)
+#define cpu_to_be16(x) __builtin_bswap16(x)
+#define cpu_to_be32(x) __builtin_bswap32(x)
+#define cpu_to_be64(x) __builtin_bswap64(x)
+""" + header + r"""
+struct drive_s { u16 blksize; };
+struct disk_op_s {
+    int command;
+    u16 count;
+    u64 lba;
+    struct drive_s *drive_fl;
+    void *cdbcmd;
+    u16 blocksize;
+};
+""" + blockcmd[start:end] + r"""
+int main(void)
+{
+    struct drive_s drive = { 2048 };
+    struct disk_op_s op = { .command = CMD_READ, .count = 2,
+                            .lba = 0x123456, .drive_fl = &drive };
+    u8 packet[16];
+    memset(packet, 0xa5, sizeof(packet));
+    assert(scsi_fill_cmd(&op, packet, 12) == 2048);
+    assert(packet[0] == CDB_CMD_READ_10 && packet[4] == 0x34);
+    assert(packet[5] == 0x56 && packet[8] == 2);
+    for (unsigned i = 12; i < 16; i++)
+        assert(packet[i] == 0xa5);
+    op.lba = 0x100000000ULL;
+    memset(packet, 0xa5, sizeof(packet));
+    assert(scsi_fill_cmd(&op, packet, 12) == -1);
+    for (unsigned i = 0; i < sizeof(packet); i++)
+        assert(packet[i] == 0xa5);
+    assert(scsi_fill_cmd(&op, packet, 16) == 2048);
+    assert(packet[0] == CDB_CMD_READ_16);
+    return 0;
+}
+"""
+with tempfile.TemporaryDirectory(prefix="seabios-atapi-cdb-") as temp:
+    test = Path(temp) / "test.c"
+    binary = Path(temp) / "test"
+    test.write_text(cdb_test, encoding="utf-8")
+    subprocess.run([cc, "-std=gnu11", "-Wall", "-Wextra", "-Werror",
+                    str(test), "-o", str(binary)], check=True)
+    subprocess.run([str(binary)], check=True)
+print("ATAPI CDB length checks passed")

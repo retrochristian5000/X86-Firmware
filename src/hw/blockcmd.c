@@ -129,7 +129,8 @@ scsi_fill_cmd(struct disk_op_s *op, void *cdbcmd, int maxcdb)
     case CMD_READ:
     case CMD_WRITE: ;
         if (!scsi_rw16_needed(op->lba, op->count)) {
-            if (maxcdb < sizeof(struct cdb_rwdata_10))
+            // The wire CDB is 10 bytes; the structure has trailing padding.
+            if (maxcdb < 10)
                 return -1;
             struct cdb_rwdata_10 *cmd = cdbcmd;
             memset(cmd, 0, maxcdb);
@@ -138,7 +139,7 @@ scsi_fill_cmd(struct disk_op_s *op, void *cdbcmd, int maxcdb)
             cmd->lba = cpu_to_be32(op->lba);
             cmd->count = cpu_to_be16(op->count);
         } else {
-            if (maxcdb < sizeof(struct cdb_rwdata_16))
+            if (maxcdb < (int)sizeof(struct cdb_rwdata_16))
                 return -1;
             struct cdb_rwdata_16 *cmd = cdbcmd;
             memset(cmd, 0, maxcdb);
