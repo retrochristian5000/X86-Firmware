@@ -52,7 +52,7 @@ def setSectionsStart(sections, endaddr, minalign=1, segoffset=0):
     for section in sections:
         minalign = max(minalign, section.align)
         totspace = alignpos(totspace, section.align) + section.size
-    startaddr = int((endaddr - totspace) / minalign) * minalign
+    startaddr = aligndown(endaddr - totspace, minalign)
     curaddr = startaddr
     for section in sections:
         curaddr = alignpos(curaddr, section.align)
@@ -86,6 +86,8 @@ def fitSections(sections, fillsections):
                     section.name, section.align))
                 sys.exit(1)
     fixedsections.sort(key=operator.itemgetter(0))
+    if not fixedsections:
+        sys.exit("Error: No fixed BIOS sections found")
     firstfixed = fixedsections[0][0]
 
     # Find freespace in fixed address area
@@ -99,13 +101,16 @@ def fitSections(sections, fillsections):
         else:
             nextaddr = fixedsections[i+1][0]
         avail = nextaddr - addr - section.size
+        if addr < 0 or addr >= BUILD_BIOS_SIZE or avail < 0:
+            sys.exit("Error: Fixed BIOS section %s overlaps the next "
+                     "section or exceeds the BIOS segment" % section.name)
         fixedAddr.append((avail, section))
     fixedAddr.sort(key=operator.itemgetter(0))
 
     # Attempt to fit other sections into fixed area
     canrelocate = [(section.size, section.align, section.name, section)
                    for section in fillsections]
-    canrelocate.sort()
+    canrelocate.sort(key=operator.itemgetter(0, 1, 2))
     canrelocate = [section for size, align, name, section in canrelocate]
     totalused = 0
     for freespace, fixedsection in fixedAddr:
@@ -132,8 +137,11 @@ def fitSections(sections, fillsections):
             # Found a section that can fit.
             fitnextaddr, fitsection = canfit
             canrelocate.remove(fitsection)
-            fitsection.finalloc = addpos + BUILD_BIOS_ADDR
-            fitsection.finalsegloc = addpos
+            # The recorded address must match the aligned input section,
+            # not the start of the gap before its alignment padding.
+            fitaddr = fitnextaddr - fitsection.size
+            fitsection.finalloc = fitaddr + BUILD_BIOS_ADDR
+            fitsection.finalsegloc = fitaddr
             addpos = fitnextaddr
             totalused += fitsection.size
 #            print("    Adding %s (size %d align %d) pos=%x avail=%d" % (
@@ -479,7 +487,7 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
 
 %s
 """ % (li.zonelow_base,
-       int(li.zonelow_base / 16),
+       li.zonelow_base // 16,
        outSections(filesections16, useseg=1))
     outfile = open(out16, 'w')
     outfile.write(COMMONHEADER + out + COMMONTRAILER)
@@ -509,7 +517,7 @@ def writeLinkerScripts(li, out16, out32seg, out32flat):
         relocstr = (strRelocs("_reloc_abs", "code32init_start", absrelocs)
                     + strRelocs("_reloc_rel", "code32init_start", relrelocs)
                     + strRelocs("_reloc_init", "code32flat_start", initrelocs))
-        numrelocs = len(absrelocs + relrelocs + initrelocs)
+        numrelocs = len(absrelocs) + len(relrelocs) + len(initrelocs)
         sec32all_start -= numrelocs * 4
     filesections32flat = getSectionsFileid(li.sections, '32flat')
     out = outXRefs([], exportsyms=li.varlowsyms
@@ -580,8 +588,8 @@ def findReachable(anchorsections, checkreloc, data):
     pending = list(anchorsections)
     while pending:
         section = pending.pop()
+        chain = anchorsections[section] + [section.name]
         for reloc in section.relocs:
-            chain = anchorsections[section] + [section.name]
             if not checkreloc(reloc, section, data, chain):
                 continue
             nextsection = reloc.symbol.section

@@ -46,6 +46,61 @@ class LinkerScriptTests(unittest.TestCase):
         self.assertIn('. = ABSOLUTE(0x1234) ;', script)
 
 
+class SectionPlacementTests(unittest.TestCase):
+    def test_fixed_gap_records_aligned_location(self):
+        first = StubSection('.fixedaddr.ff00', None, None, '16', size=3)
+        reset = StubSection('.fixedaddr.fff0', None, None, '16', size=16)
+        code = StubSection('.text.aligned', None, None, '16', size=8,
+                           align=16)
+        with contextlib.redirect_stdout(io.StringIO()):
+            layoutrom.fitSections([first, reset], [code])
+        self.assertEqual(code.finalsegloc, 0xff10)
+        self.assertEqual(code.finalloc, 0xfff10)
+        self.assertEqual(reset.finalloc, 0xffff0)
+        self.assertIn('.text.aligned 0xff10 :',
+                      layoutrom.outSections([code], useseg=1))
+        self.assertIn('ABSOLUTE(0xfff10)', layoutrom.outRelSections([code]))
+
+    def test_fixed_gap_with_padding_cannot_overlap_next_entry(self):
+        first = StubSection('.fixedaddr.ff00', None, None, '16', size=3)
+        reset = StubSection('.fixedaddr.fff0', None, None, '16', size=16)
+        code = StubSection('.text.too_large', None, None, '16',
+                           size=0xe1, align=16)
+        with contextlib.redirect_stdout(io.StringIO()):
+            layoutrom.fitSections([first, reset], [code])
+        self.assertIsNone(code.finalloc)
+
+    def test_overlapping_fixed_sections_are_rejected(self):
+        first = StubSection('.fixedaddr.ffe0', None, None, '16', size=17)
+        reset = StubSection('.fixedaddr.fff0', None, None, '16', size=16)
+        with self.assertRaisesRegex(SystemExit, 'overlaps'):
+            layoutrom.fitSections([first, reset], [])
+
+    def test_negative_layout_start_rounds_down(self):
+        code = StubSection('.text.code', None, None, '32flat',
+                           size=17, align=16)
+        start, alignment = layoutrom.setSectionsStart([code], 16)
+        self.assertEqual((start, alignment), (-16, 16))
+        self.assertLessEqual(code.finalloc + code.size, 16)
+
+    def test_segment_offsets_and_input_alignment_preserved(self):
+        sections = [
+            StubSection('.text.first', None, None, '16', size=3, align=4),
+            StubSection('.text.second', None, None, '16', size=7, align=16),
+        ]
+        start, alignment = layoutrom.setSectionsStart(
+            sections, 0xfff00, segoffset=layoutrom.BUILD_BIOS_ADDR)
+        self.assertEqual(alignment, 16)
+        self.assertEqual(start, sections[0].finalloc)
+        for section in sections:
+            self.assertEqual(section.finalloc % section.align, 0)
+            self.assertEqual(section.finalsegloc,
+                             section.finalloc - layoutrom.BUILD_BIOS_ADDR)
+        self.assertLessEqual(sections[0].finalloc + sections[0].size,
+                             sections[1].finalloc)
+        self.assertLessEqual(sections[1].finalloc + sections[1].size, 0xfff00)
+
+
 class RomSizeReportTests(unittest.TestCase):
     def test_only_reachable_rom_sections_are_ranked(self):
         sections = [
