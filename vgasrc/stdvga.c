@@ -148,17 +148,22 @@ stdvga_dac_read_many(u16 seg, u8 *data_far, u8 start, int count)
 void
 stdvga_dac_write_many(u16 seg, u8 *data_far, u8 start, int count)
 {
-    while (count) {
+    if (count <= 0)
+        return;
+
+    // The VGA DAC advances its write index after every RGB triplet
+    // (CL-GD5446 Technical Reference, sections 4.12 and 4.13).
+    outb(start, VGAREG_DAC_WRITE_ADDRESS);
+    while (count--) {
         u8 r = GET_FARVAR(seg, *data_far);
         data_far++;
         u8 g = GET_FARVAR(seg, *data_far);
         data_far++;
         u8 b = GET_FARVAR(seg, *data_far);
         data_far++;
-        struct vbe_palette_entry rgb = { .red=r, .green=g, .blue=b };
-        stdvga_dac_write(start, rgb);
-        start++;
-        count--;
+        outb(r, VGAREG_DAC_DATA);
+        outb(g, VGAREG_DAC_DATA);
+        outb(b, VGAREG_DAC_DATA);
     }
 }
 
