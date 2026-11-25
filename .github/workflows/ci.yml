@@ -42,6 +42,9 @@ jobs:
       - name: Verify SeaBIOS boot-menu F9 scancode and prompt
         run: python3 scripts/test-boot-menu-f9.py
 
+      - name: Verify legacy disk bootloader handoff
+        run: python3 scripts/test-boot-handoff.py
+
       - name: Test virtio-blk completion I/O without fixed polling delays
         run: python3 scripts/test-virtio-blk-io.py
 
