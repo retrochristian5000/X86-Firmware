@@ -135,7 +135,7 @@ $(Q)printf '$(foreach i,$2,#include "$i"\n)' > $3.tmp.c
 $(Q)$(CC) -I. $1 $(CFLAGSWHOLE) -c $3.tmp.c -o $3
 endef
 
-%.noexec.o: %.o
+%.noexec.o: %.o scripts/ldnoexec.py
 	@echo "  Stripping $@"
 	$(Q)$(STRIP) $< -o $<.strip.o
 	$(Q)$(PYTHON) ./scripts/ldnoexec.py $<.strip.o $@
@@ -178,20 +178,30 @@ $(OUT)romlayout.o: src/romlayout.S $(OUT)autoconf.h $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
 	$(Q)$(CC) $(CFLAGS16) -c -D__ASSEMBLY__ $< -o $@
 
-$(OUT)romlayout16.lds: $(OUT)ccode32flat.o $(OUT)code32seg.o $(OUT)ccode16.o $(OUT)romlayout.o src/version.c scripts/layoutrom.py scripts/buildversion.py
-	@echo "  Building ld scripts"
+# Keep the intermediate links independent of linker-script generation.
+# A layout-only change must not rebuild the whole-program ELF inputs.
+$(OUT)version.o: src/version.c scripts/buildversion.py $(OUT)ccode32flat.o $(OUT)ccode16.o $(OUT)code32seg.o $(OUT)romlayout.o
+	@echo "  Building BIOS version"
 	$(Q)$(PYTHON) ./scripts/buildversion.py -e "$(EXTRAVERSION)" -t "$(CC);$(AS);$(LD);$(OBJCOPY);$(OBJDUMP);$(STRIP)" $(OUT)autoversion.h
-	$(Q)$(CC) $(CFLAGS32FLAT) -c src/version.c -o $(OUT)version.o
-	$(Q)$(LD) $(LD32BIT_FLAG) -r $(OUT)ccode32flat.o $(OUT)version.o -o $(OUT)code32flat.o
-	$(Q)$(LD) $(LD32BIT_FLAG) -r $(OUT)ccode16.o $(OUT)romlayout.o -o $(OUT)code16.o
+	$(Q)$(CC) $(CFLAGS32FLAT) -c src/version.c -o $@
+
+$(OUT)code32flat.o: $(OUT)ccode32flat.o $(OUT)version.o
+	@echo "  Linking $@"
+	$(Q)$(LD) $(LD32BIT_FLAG) -r $^ -o $@
+
+$(OUT)code16.o: $(OUT)ccode16.o $(OUT)romlayout.o
+	@echo "  Linking $@"
+	$(Q)$(LD) $(LD32BIT_FLAG) -r $^ -o $@
+
+# Multi-target pattern rules are grouped by GNU make, including older
+# versions that do not support the explicit &: grouped-target syntax.
+# Each invocation produces all three scripts, even if just one was missing.
+$(OUT)romlayout16.% $(OUT)romlayout32seg.% $(OUT)romlayout32flat.%: $(OUT)code32flat.o $(OUT)code32seg.o $(OUT)code16.o $(OUT)$(KCONFIG_AUTOHEADER) scripts/layoutrom.py
+	@echo "  Building ld scripts"
 	$(Q)$(OBJDUMP) -thr $(OUT)code32flat.o > $(OUT)code32flat.o.objdump
 	$(Q)$(OBJDUMP) -thr $(OUT)code32seg.o > $(OUT)code32seg.o.objdump
 	$(Q)$(OBJDUMP) -thr $(OUT)code16.o > $(OUT)code16.o.objdump
 	$(Q)$(PYTHON) ./scripts/layoutrom.py $(OUT)code16.o.objdump $(OUT)code32seg.o.objdump $(OUT)code32flat.o.objdump $(OUT)$(KCONFIG_AUTOHEADER) $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds
-
-# These are actually built by scripts/layoutrom.py above, but by pulling them
-# into an extra rule we prevent make -j from spawning layoutrom.py 4 times.
-$(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds $(OUT)code32flat.o $(OUT)code16.o: $(OUT)romlayout16.lds
 
 $(OUT)rom16.o: $(OUT)code16.o $(OUT)romlayout16.lds
 	@echo "  Linking $@"

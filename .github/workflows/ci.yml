@@ -80,6 +80,9 @@ jobs:
       - name: Verify firmware layout and ROM size audit
         run: python3 scripts/test-layoutrom.py
 
+      - name: Verify incremental firmware linking workflow
+        run: python3 scripts/test-link-workflow.py
+
       - name: Verify CSM ABI packing boundaries
         run: cc -std=c11 -Wall -Wextra -Werror -Isrc -fsyntax-only scripts/test-legacybios-pack.c
 
