@@ -95,8 +95,9 @@ make_bios_readonly_intel(u16 bdf, u32 pam0)
     int i;
     for (i=0; i<6; i++) {
         u32 mem = BUILD_ROM_START + i * 32*1024;
-        if (romlast < mem + 16*1024 || rommax < mem + 32*1024) {
-            if (romlast >= mem && rommax >= mem + 16*1024)
+        // romlast is the exclusive end of the deployed option ROMs.
+        if (romlast <= mem + 16*1024 || rommax < mem + 32*1024) {
+            if (romlast > mem && rommax >= mem + 16*1024)
                 pam[i + 1] = 0x31;
             break;
         }

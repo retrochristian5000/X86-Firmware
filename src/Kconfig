@@ -466,10 +466,11 @@ menu "BIOS interfaces"
         default n
         help
             When selected, the "Upper Memory Block" area
-            (0x90000-0xa0000) that is not used for option roms will be
-            made writable.  This allows the ram to be directly
-            modified by programs.  However, some old DOS high memory
-            managers may require the UMB region to be read-only.
+            (0xc0000-0xeffff) that is not occupied by option ROMs can be
+            made writable at chipset shadow-memory granularity.  SeaBIOS
+            runtime allocations remain writable regardless of this option.
+            Some older DOS memory managers require unused UMB regions to
+            be read-only during their memory scan.
 
     config TCGBIOS
         depends on S3_RESUME
