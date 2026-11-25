@@ -20,6 +20,7 @@ struct atadrive_s {
     struct drive_s drive;
     struct ata_channel_s *chan_gf;
     u8 slave;
+    u8 dma_supported; // IDENTIFY DEVICE word 49, bit 8
 };
 
 // ata.c
