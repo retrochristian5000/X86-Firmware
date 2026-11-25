@@ -316,17 +316,17 @@ handle_15e801(struct bregs *regs)
 static void
 handle_15e820(struct bregs *regs)
 {
-    int count = GET_GLOBAL(e820_count);
-    if (regs->edx != 0x534D4150 || regs->bx >= count
+    u32 count = GET_GLOBAL(e820_count);
+    if (regs->edx != 0x534D4150 || regs->ebx >= count
         || regs->ecx < sizeof(e820_list[0])) {
         set_code_invalid(regs, RET_EUNSUPPORTED);
         return;
     }
 
     memcpy_far(regs->es, (void*)(regs->di+0)
-               , get_global_seg(), &e820_list[regs->bx]
+               , get_global_seg(), &e820_list[regs->ebx]
                , sizeof(e820_list[0]));
-    if (regs->bx == count-1)
+    if (regs->ebx == count-1)
         regs->ebx = 0;
     else
         regs->ebx++;

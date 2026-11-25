@@ -639,10 +639,10 @@ atapi_read_phases(struct disk_op_s *op, int blocksize, u16 limit,
             break;
 
         if (CONFIG_ATA_PIO32 && !(bytes & 3))
-            insl_fl(iobase1, buf_fl, bytes / 4);
+            insl_fl(iobase1, (void *)buf_fl, bytes / 4);
         else {
             if (bytes / 2)
-                insw_fl(iobase1, buf_fl, bytes / 2);
+                insw_fl(iobase1, (void *)buf_fl, bytes / 2);
             if (bytes & 1) {
                 // Only the low byte of the final word belongs to the caller.
                 u8 last = inw(iobase1);
