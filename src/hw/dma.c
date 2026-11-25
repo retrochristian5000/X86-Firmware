@@ -23,11 +23,12 @@
 int
 dma_floppy(u32 addr, int count, int isWrite)
 {
-    // check for 64K boundary overrun
-    u16 end = count - 1;
-    u32 last_addr = addr + end;
-    if ((addr >> 16) != (last_addr >> 16))
+    // PC/AT channel 2 has a 24-bit address and a 16-bit count.
+    // Check the byte count and page boundary before narrowing the count.
+    if (count <= 0 || count > 0x10000 || addr >= 0x1000000
+        || (u32)count > 0x10000 - (addr & 0xffff))
         return -1;
+    u16 end = count - 1;
 
     u8 mode_register = 0x46; // single mode, increment, autoinit disable,
     if (isWrite)
