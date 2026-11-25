@@ -100,11 +100,32 @@ static void ahci_port_writel(struct ahci_ctrl_s *ctrl, u32 pnr, u32 reg, u32 val
     ahci_ctrl_writel(ctrl, ctrl_reg, val);
 }
 
+// AHCI 1.3.1 sections 4.2.2 and 4.2.3.3: PRDTL is zero for
+// non-data commands.  A one-entry PRDT supports at most 4 MiB.
+static int
+ahci_prepare_transfer(struct ahci_cmd_s *cmd, struct ahci_list_s *list,
+                      int iswrite, int isatapi, void *buffer, u32 bsize)
+{
+    if (bsize > 4 * 1024 * 1024 || (bsize && (!buffer || (bsize & 1))))
+        return -1;
+
+    cmd->prdt[0].base = bsize ? (u32)buffer : 0;
+    cmd->prdt[0].baseu = 0;
+    cmd->prdt[0].res = 0;
+    cmd->prdt[0].flags = bsize ? bsize - 1 : 0;
+    list[0].flags = ((bsize ? 1u << 16 : 0) |
+                     (iswrite ? AHCI_CMD_WRITE : 0) |
+                     (isatapi ? AHCI_CMD_ATAPI : 0) |
+                     5); /* FIS length in dwords */
+    list[0].bytes = 0;
+    return 0;
+}
+
 // submit ahci command + wait for result
 static int ahci_command(struct ahci_port_s *port_gf, int iswrite, int isatapi,
                         void *buffer, u32 bsize)
 {
-    u32 val, status, success, flags, intbits, error;
+    u32 val, status, success, intbits, error;
     struct ahci_ctrl_s *ctrl = port_gf->ctrl;
     struct ahci_cmd_s  *cmd  = port_gf->cmd;
     struct ahci_fis_s  *fis  = port_gf->fis;
@@ -113,16 +134,8 @@ static int ahci_command(struct ahci_port_s *port_gf, int iswrite, int isatapi,
 
     cmd->fis.reg       = 0x27;
     cmd->fis.pmp_type  = 1 << 7; /* cmd fis */
-    cmd->prdt[0].base  = (u32)buffer;
-    cmd->prdt[0].baseu = 0;
-    cmd->prdt[0].flags = bsize-1;
-
-    flags = ((1 << 16) | /* one prd entry */
-             (iswrite ? (1 << 6) : 0) |
-             (isatapi ? (1 << 5) : 0) |
-             (5 << 0)); /* fis length (dwords) */
-    list[0].flags  = flags;
-    list[0].bytes  = 0;
+    if (ahci_prepare_transfer(cmd, list, iswrite, isatapi, buffer, bsize))
+        return -1;
     list[0].base   = (u32)(cmd);
     list[0].baseu  = 0;
 

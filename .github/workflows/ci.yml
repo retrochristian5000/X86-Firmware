@@ -48,6 +48,9 @@ jobs:
       - name: Verify El Torito CD-ROM bootloader handoff
         run: python3 scripts/test-cdrom-handoff.py
 
+      - name: Verify ATAPI data and non-data transfer setup
+        run: python3 scripts/test-atapi-transfer.py
+
       - name: Verify optical and floppy DMA buffer transfers
         run: python3 scripts/test-disk-buffers.py
 

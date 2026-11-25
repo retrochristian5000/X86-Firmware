@@ -292,6 +292,9 @@ ata_pio_transfer(struct disk_op_s *op, int iswrite, int blocksize)
     int count = op->count;
     void *buf_fl = op->buf_fl;
     int status;
+
+    if (!count)
+        return 0;
     // ATAPI responses need not be a multiple of four bytes. Preserve
     // the complete word transfer instead of truncating its final word.
     int pio32 = CONFIG_ATA_PIO32 && !(blocksize & 3);
@@ -656,6 +659,11 @@ ata_atapi_process_op(struct disk_op_s *op)
         }
 
         ret = ata_pio_transfer(op, 0, blocksize);
+    } else if (status & ATA_CB_STAT_DRQ) {
+        // A non-data packet must finish without requesting a data phase.
+        dprintf(6, "send_atapi_cmd : unexpected data phase (status %02x)\n",
+                status);
+        ret = -3;
     }
 
 fail:
