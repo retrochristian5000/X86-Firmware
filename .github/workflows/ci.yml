@@ -51,6 +51,9 @@ jobs:
       - name: Verify optical and floppy DMA buffer transfers
         run: python3 scripts/test-disk-buffers.py
 
+      - name: Verify extra-stack bounds and stack usage reporting
+        run: python3 scripts/test-stack-bounds.py
+
       - name: Test virtio-blk completion I/O without fixed polling delays
         run: python3 scripts/test-virtio-blk-io.py
 
