@@ -40,6 +40,7 @@ static int PendingEHCI;
  * Root hub
  ****************************************************************/
 
+#define EHCI_HCS_PPC (1U << 4)
 #define EHCI_TIME_POSTPOWER 20
 #define EHCI_TIME_POSTRESET 2
 
@@ -116,7 +117,10 @@ static struct usbhub_op_s ehci_HubOp = {
 static int
 check_ehci_ports(struct usb_ehci_s *cntl)
 {
-    // Power up ports.
+    // EHCI 1.0: without port power control, VBUS is always available.
+    // Keep the recovery delay for switchable ports and for any unexpected
+    // unpowered port, but do not wait on an already powered fixed-power hub.
+    int wait_power = !!(readl(&cntl->caps->hcsparams) & EHCI_HCS_PPC);
     int i;
     for (i=0; i<cntl->checkports; i++) {
         u32 *portreg = &cntl->regs->portsc[i];
@@ -124,9 +128,11 @@ check_ehci_ports(struct usb_ehci_s *cntl)
         if (!(portsc & PORT_POWER)) {
             portsc |= PORT_POWER;
             writel(portreg, portsc);
+            wait_power = 1;
         }
     }
-    msleep(EHCI_TIME_POSTPOWER);
+    if (wait_power)
+        msleep(EHCI_TIME_POSTPOWER);
 
     struct usbhub_s hub;
     memset(&hub, 0, sizeof(hub));
