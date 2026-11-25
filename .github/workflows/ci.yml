@@ -45,6 +45,9 @@ jobs:
       - name: Verify legacy disk bootloader handoff
         run: python3 scripts/test-boot-handoff.py
 
+      - name: Verify El Torito CD-ROM bootloader handoff
+        run: python3 scripts/test-cdrom-handoff.py
+
       - name: Test virtio-blk completion I/O without fixed polling delays
         run: python3 scripts/test-virtio-blk-io.py
 
