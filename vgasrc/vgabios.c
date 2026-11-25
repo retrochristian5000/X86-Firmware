@@ -457,13 +457,24 @@ handle_100a(struct bregs *regs)
 static void
 handle_100b00(struct bregs *regs)
 {
+    if (GET_BDA(video_mode) <= 3) {
+        // In color text modes, only the overscan border changes.  Use
+        // the active RGBI-to-DAC mapping rather than the CGA graphics map.
+        stdvga_set_overscan_border_color(stdvga_attr_read(regs->bl & 0x0f));
+        return;
+    }
     stdvga_set_cga_background_color(regs->bl);
 }
 
 static void
 handle_100b01(struct bregs *regs)
 {
-    stdvga_set_cga_palette(regs->bl);
+    // Palette selection is defined for the four-color CGA graphics modes.
+    u8 mode = GET_BDA(video_mode);
+    if (mode == 4 || mode == 5)
+        stdvga_set_cga_palette(regs->bl);
+    else
+        debug_stub(regs);
 }
 
 static void
