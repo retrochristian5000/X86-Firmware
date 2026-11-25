@@ -330,7 +330,13 @@ u8 *StackPos VARLOW;
 int
 on_extra_stack(void)
 {
-    return MODE16 && GET_SEG(SS) == SEG_LOW && getesp() > (u32)ExtraStack;
+    if (!MODE16 || GET_SEG(SS) != SEG_LOW)
+        return 0;
+    // ESP and ExtraStack are offsets in the same low-memory segment.
+    // The stack grows down from its top; unrelated objects above it are
+    // not stack frames and must not be used for a hop back.
+    u32 offset = getesp() - (u32)ExtraStack;
+    return offset && offset <= BUILD_EXTRA_STACK_SIZE;
 }
 
 // Switch to the extra stack and call a function.
