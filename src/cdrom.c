@@ -151,7 +151,7 @@ cdrom_boot(struct drive_s *drive)
     dop.count = 1;
     dop.buf_fl = buffer;
     ret = process_op(&dop);
-    if (ret)
+    if (ret || dop.count != 1)
         return 3;
 
     // Validity checks
@@ -167,7 +167,7 @@ cdrom_boot(struct drive_s *drive)
     dop.lba = lba;
     dop.count = 1;
     ret = process_op(&dop);
-    if (ret)
+    if (ret || dop.count != 1)
         return 7;
 
     // Validation entry
@@ -180,16 +180,30 @@ cdrom_boot(struct drive_s *drive)
     if (buffer[0x1F] != 0xAA)
         return 10;  // key 2
 
+    // The 16 little-endian words of the validation entry must sum to zero.
+    u16 sum = 0;
+    int i;
+    for (i = 0; i < 0x20; i += 2)
+        sum += buffer[i] | (buffer[i + 1] << 8);
+    if (sum)
+        return 10;
+
     // Initial/Default Entry
     if (buffer[0x20] != 0x88)
         return 11; // Bootable
+
+    // Reject unsupported media types and empty BIOS boot images before
+    // changing emulation state or measuring/loading the image.
+    u8 media = buffer[0x21];
+    u16 nbsectors = *(u16*)&buffer[0x26];
+    if (media > 4 || !nbsectors)
+        return 11;
 
     /* measure 2048 bytes (one sector) */
     tpm_add_cdrom_catalog(MAKE_FLATPTR(GET_SEG(SS), buffer), sizeof(buffer));
 
     // Fill in el-torito cdrom emulation fields.
     emulated_drive_gf = drive;
-    u8 media = buffer[0x21];
 
     u16 boot_segment = *(u16*)&buffer[0x22];
     if (!boot_segment)
@@ -197,7 +211,6 @@ cdrom_boot(struct drive_s *drive)
     CDEmu.load_segment = boot_segment;
     CDEmu.buffer_segment = 0x0000;
 
-    u16 nbsectors = *(u16*)&buffer[0x26];
     CDEmu.sector_count = nbsectors;
 
     lba = *(u32*)&buffer[0x28];
@@ -216,7 +229,7 @@ cdrom_boot(struct drive_s *drive)
             count = 64*1024/CDROM_SECTOR_SIZE;
         dop.count = count;
         ret = process_op(&dop);
-        if (ret)
+        if (ret || dop.count != count)
             return 12;
         nbsectors -= count;
         dop.lba += count;
