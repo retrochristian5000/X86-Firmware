@@ -401,12 +401,14 @@ ata_try_dma(struct disk_op_s *op, int iswrite, int blocksize)
 
         SET_LOWFLAT(dma->buf_fl, dest);
         bytes -= count;
+        // The PRD byte count is 16 bits; zero encodes 64 KiB.
+        // Keep the actual length separate from the end-of-table flag.
+        u32 flags = count & 0xffff;
         if (!bytes)
-            // Last descriptor.
-            count |= 1<<31;
-        dprintf(16, "dma@%p: %08x %08x\n", dma, dest, count);
+            flags |= 1U << 31;
+        dprintf(16, "dma@%p: %08x %08x\n", dma, dest, flags);
         dest += count;
-        SET_LOWFLAT(dma->count, count);
+        SET_LOWFLAT(dma->count, flags);
         dma++;
     }
 
@@ -522,6 +524,13 @@ static int
 ata_readwrite(struct disk_op_s *op, int iswrite)
 {
     u64 lba = op->lba;
+    u64 sectors = GET_FLATPTR(op->drive_fl->sectors);
+
+    // Reject an invalid complete request before touching the controller.
+    if (!op->count)
+        return DISK_RET_SUCCESS;
+    if (lba >= sectors || op->count > sectors - lba)
+        return DISK_RET_EADDRNOTFOUND;
 
     int usepio = ata_try_dma(op, iswrite, DISK_SECTOR_SIZE);
 
