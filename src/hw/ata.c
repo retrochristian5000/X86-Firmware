@@ -381,7 +381,7 @@ ata_try_dma(struct disk_op_s *op, int iswrite, int blocksize)
         op->drive_fl, struct atadrive_s, drive);
     struct ata_channel_s *chan_gf = GET_GLOBALFLAT(adrive_gf->chan_gf);
     u16 iomaster = GET_GLOBALFLAT(chan_gf->iomaster);
-    if (! iomaster)
+    if (!iomaster || !GET_GLOBALFLAT(adrive_gf->dma_supported))
         return -1;
     u32 bytes = op->count * blocksize;
     if (! bytes)
@@ -537,7 +537,7 @@ ata_readwrite(struct disk_op_s *op, int iswrite)
     struct ata_pio_command cmd;
     memset(&cmd, 0, sizeof(cmd));
 
-    if (op->count >= (1<<8) || lba + op->count >= (1<<28)) {
+    if (op->count >= (1<<8) || lba + op->count > (1<<28)) {
         cmd.sector_count2 = op->count >> 8;
         cmd.lba_low2 = lba >> 24;
         cmd.lba_mid2 = lba >> 32;
@@ -760,6 +760,9 @@ ata_extract_version(u16 *buffer)
 {
     // Extract ATA/ATAPI version.
     u16 ataversion = buffer[80];
+    // ATA/ATAPI-7: zero and all-ones indicate an unreported version.
+    if (!ataversion || ataversion == 0xffff)
+        return 0;
     u8 version;
     for (version=15; version>0; version--)
         if (ataversion & (1<<version))
@@ -855,13 +858,15 @@ init_drive_ata(struct atadrive_s *dummy, u16 *buffer)
         return NULL;
     adrive->drive.type = DTYPE_ATA;
     adrive->drive.blksize = DISK_SECTOR_SIZE;
+    adrive->dma_supported = !!(buffer[49] & (1 << 8));
 
     adrive->drive.pchs.cylinder = buffer[1];
     adrive->drive.pchs.head = buffer[3];
     adrive->drive.pchs.sector = buffer[6];
 
     u64 sectors;
-    if (buffer[83] & (1 << 10)) // word 83 - lba48 support
+    // Word 83 is valid only when bit 14 is set and bit 15 is clear.
+    if ((buffer[83] & 0xc400) == 0x4400)
         sectors = *(u64*)&buffer[100]; // word 100-103
     else
         sectors = *(u32*)&buffer[60]; // word 60 and word 61
