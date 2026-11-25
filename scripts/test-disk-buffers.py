@@ -13,7 +13,7 @@ start = cdrom.index("static int\ncdemu_read(")
 end = cdrom.index("\nint\ncdemu_process_op(", start)
 dma = (ROOT / "src/hw/dma.c").read_text(encoding="utf-8")
 dma_start = dma.index("#define PORT_DMA_ADDR_2")
-dma_end = dma.index("// Reset the DMA controller", dma_start)
+dma_end = dma.index("\nvoid\ndma_setup(", dma_start)
 
 STUB = r"""
 #include <assert.h>
