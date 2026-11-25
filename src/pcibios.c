@@ -22,6 +22,7 @@ extern void entry_pcibios32(void);
 #define RET_FUNC_NOT_SUPPORTED 0x81
 #define RET_BAD_VENDOR_ID      0x83
 #define RET_DEVICE_NOT_FOUND   0x86
+#define RET_BAD_REGISTER       0x87
 #define RET_BUFFER_TOO_SMALL   0x89
 
 // installation check
@@ -40,7 +41,11 @@ handle_1ab101(struct bregs *regs)
 static void
 handle_1ab102(struct bregs *regs)
 {
-    u32 id = (regs->cx << 16) | regs->dx;
+    if (regs->dx == 0xffff) {
+        set_code_invalid(regs, RET_BAD_VENDOR_ID);
+        return;
+    }
+    u32 id = ((u32)regs->cx << 16) | regs->dx;
     int count = regs->si;
     int bus = -1;
     while (bus < GET_GLOBAL(MaxPCIBus)) {
@@ -65,7 +70,7 @@ static void
 handle_1ab103(struct bregs *regs)
 {
     int count = regs->si;
-    u32 classprog = regs->ecx;
+    u32 classprog = regs->ecx & 0xffffff;
     int bus = -1;
     while (bus < GET_GLOBAL(MaxPCIBus)) {
         bus++;
@@ -84,10 +89,23 @@ handle_1ab103(struct bregs *regs)
     set_code_invalid(regs, RET_DEVICE_NOT_FOUND);
 }
 
+// PCI BIOS 2.10 exposes only the conventional 256-byte configuration space.
+static int
+pci_bios_valid_reg(struct bregs *regs, unsigned size)
+{
+    if (regs->di > 256 - size || (regs->di & (size - 1))) {
+        set_code_invalid(regs, RET_BAD_REGISTER);
+        return 0;
+    }
+    return 1;
+}
+
 // read configuration byte
 static void
 handle_1ab108(struct bregs *regs)
 {
+    if (!pci_bios_valid_reg(regs, 1))
+        return;
     regs->cl = pci_config_readb(regs->bx, regs->di);
     set_code_success(regs);
 }
@@ -96,6 +114,8 @@ handle_1ab108(struct bregs *regs)
 static void
 handle_1ab109(struct bregs *regs)
 {
+    if (!pci_bios_valid_reg(regs, 2))
+        return;
     regs->cx = pci_config_readw(regs->bx, regs->di);
     set_code_success(regs);
 }
@@ -104,6 +124,8 @@ handle_1ab109(struct bregs *regs)
 static void
 handle_1ab10a(struct bregs *regs)
 {
+    if (!pci_bios_valid_reg(regs, 4))
+        return;
     regs->ecx = pci_config_readl(regs->bx, regs->di);
     set_code_success(regs);
 }
@@ -112,6 +134,8 @@ handle_1ab10a(struct bregs *regs)
 static void
 handle_1ab10b(struct bregs *regs)
 {
+    if (!pci_bios_valid_reg(regs, 1))
+        return;
     pci_config_writeb(regs->bx, regs->di, regs->cl);
     set_code_success(regs);
 }
@@ -120,6 +144,8 @@ handle_1ab10b(struct bregs *regs)
 static void
 handle_1ab10c(struct bregs *regs)
 {
+    if (!pci_bios_valid_reg(regs, 2))
+        return;
     pci_config_writew(regs->bx, regs->di, regs->cx);
     set_code_success(regs);
 }
@@ -128,6 +154,8 @@ handle_1ab10c(struct bregs *regs)
 static void
 handle_1ab10d(struct bregs *regs)
 {
+    if (!pci_bios_valid_reg(regs, 4))
+        return;
     pci_config_writel(regs->bx, regs->di, regs->ecx);
     set_code_success(regs);
 }
