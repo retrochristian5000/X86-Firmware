@@ -7,6 +7,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 class LinkWorkflowTests(unittest.TestCase):
     def test_parallel_and_incremental_link_jobs(self):
         source = (ROOT / 'Makefile').read_text(encoding='utf-8')
-        start = source.index('$(OUT)version.o:')
+        start = source.index('$(OUT)autoversion.h:')
         end = source.index('$(OUT)bios.bin.prep:', start)
         rules = source[start:end]
         with tempfile.TemporaryDirectory(prefix='seabios-link-') as temp:
@@ -78,7 +79,6 @@ class LinkWorkflowTests(unittest.TestCase):
             self.assertEqual(link_count(noop), 0, noop)
 
             # Invalidate only the script generator, not the compiled objects.
-            import time
             time.sleep(0.02)
             (work / 'scripts/layoutrom.py').touch()
             layout = build()
@@ -93,6 +93,7 @@ class LinkWorkflowTests(unittest.TestCase):
                 recovered = build()
                 self.assertEqual(recovered.count('LAYOUT'), 1, recovered)
                 self.assertTrue((work / 'out' / name).is_file())
+                self.assertEqual(link_count(recovered), 3, recovered)
                 self.assertNotIn('LINK out/code16.o', recovered)
                 self.assertNotIn('LINK out/code32flat.o', recovered)
                 self.assertEqual(link_count(build()), 0)

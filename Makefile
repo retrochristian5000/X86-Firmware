@@ -180,10 +180,12 @@ $(OUT)romlayout.o: src/romlayout.S $(OUT)autoconf.h $(OUT)asm-offsets.h
 
 # Keep the intermediate links independent of linker-script generation.
 # A layout-only change must not rebuild the whole-program ELF inputs.
-$(OUT)version.o: src/version.c scripts/buildversion.py $(OUT)ccode32flat.o $(OUT)ccode16.o $(OUT)code32seg.o $(OUT)romlayout.o
+$(OUT)autoversion.h: src/version.c scripts/buildversion.py $(OUT)ccode32flat.o $(OUT)ccode16.o $(OUT)code32seg.o $(OUT)romlayout.o
 	@echo "  Building BIOS version"
-	$(Q)$(PYTHON) ./scripts/buildversion.py -e "$(EXTRAVERSION)" -t "$(CC);$(AS);$(LD);$(OBJCOPY);$(OBJDUMP);$(STRIP)" $(OUT)autoversion.h
-	$(Q)$(CC) $(CFLAGS32FLAT) -c src/version.c -o $@
+	$(Q)$(PYTHON) ./scripts/buildversion.py -e "$(EXTRAVERSION)" -t "$(CC);$(AS);$(LD);$(OBJCOPY);$(OBJDUMP);$(STRIP)" $@
+
+$(OUT)version.o: src/version.c $(OUT)autoversion.h
+	$(Q)$(CC) $(CFLAGS32FLAT) -c $< -o $@
 
 $(OUT)code32flat.o: $(OUT)ccode32flat.o $(OUT)version.o
 	@echo "  Linking $@"
@@ -203,15 +205,19 @@ $(OUT)romlayout16.% $(OUT)romlayout32seg.% $(OUT)romlayout32flat.%: $(OUT)code32
 	$(Q)$(OBJDUMP) -thr $(OUT)code16.o > $(OUT)code16.o.objdump
 	$(Q)$(PYTHON) ./scripts/layoutrom.py $(OUT)code16.o.objdump $(OUT)code32seg.o.objdump $(OUT)code32flat.o.objdump $(OUT)$(KCONFIG_AUTOHEADER) $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds
 
-$(OUT)rom16.o: $(OUT)code16.o $(OUT)romlayout16.lds
+# Every mode shares cross-mode addresses. Wait for all generated scripts,
+# including recovery of a missing peer, before linking any mode.
+ROM_LAYOUT_SCRIPTS := $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds
+
+$(OUT)rom16.o: $(OUT)code16.o $(ROM_LAYOUT_SCRIPTS)
 	@echo "  Linking $@"
 	$(Q)$(LD) $(LD_NOEXECSTACK) -e 0 -T $(OUT)romlayout16.lds $< -o $@
 
-$(OUT)rom32seg.o: $(OUT)code32seg.o $(OUT)romlayout32seg.lds
+$(OUT)rom32seg.o: $(OUT)code32seg.o $(ROM_LAYOUT_SCRIPTS)
 	@echo "  Linking $@"
 	$(Q)$(LD) $(LD_NOEXECSTACK) -e 0 -T $(OUT)romlayout32seg.lds $< -o $@
 
-$(OUT)rom.o: $(OUT)rom16.noexec.o $(OUT)rom32seg.noexec.o $(OUT)code32flat.o $(OUT)romlayout32flat.lds
+$(OUT)rom.o: $(OUT)rom16.noexec.o $(OUT)rom32seg.noexec.o $(OUT)code32flat.o $(ROM_LAYOUT_SCRIPTS)
 	@echo "  Linking $@"
 	$(Q)$(LD) $(LD_NOEXECSTACK) -N -T $(OUT)romlayout32flat.lds $(OUT)rom16.noexec.o $(OUT)rom32seg.noexec.o $(OUT)code32flat.o -o $@
 
