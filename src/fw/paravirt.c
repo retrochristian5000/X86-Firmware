@@ -211,6 +211,9 @@ static void qemu_detect(void)
     case 0x1237:
         dprintf(1, "Running on QEMU (i440fx)\n");
         break;
+    case 0x7192:
+        dprintf(1, "Running on QEMU (440BX, AGP disabled)\n");
+        break;
     case 0x29c0:
         dprintf(1, "Running on QEMU (q35)\n");
         break;

@@ -129,7 +129,8 @@ make_bios_writable(void)
         u32 vendev = pci_ioconfig_readl(bdf, PCI_VENDOR_ID);
         u16 vendor = vendev & 0xffff, device = vendev >> 16;
         if (vendor == PCI_VENDOR_ID_INTEL
-            && device == PCI_DEVICE_ID_INTEL_82441) {
+            && (device == PCI_DEVICE_ID_INTEL_82441
+                || device == PCI_DEVICE_ID_INTEL_82443BX_2)) {
             make_bios_writable_intel(bdf, I440FX_PAM0);
             code_mutable_preinit();
             ShadowBDF = bdf;
@@ -160,7 +161,8 @@ make_bios_readonly(void)
     }
 
     u16 device = pci_config_readw(ShadowBDF, PCI_DEVICE_ID);
-    if (device == PCI_DEVICE_ID_INTEL_82441)
+    if (device == PCI_DEVICE_ID_INTEL_82441
+        || device == PCI_DEVICE_ID_INTEL_82443BX_2)
         make_bios_readonly_intel(ShadowBDF, I440FX_PAM0);
     else
         make_bios_readonly_intel(ShadowBDF, Q35_HOST_BRIDGE_PAM0);
