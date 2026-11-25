@@ -37,49 +37,58 @@ cdemu_read(struct disk_op_s *op)
 
     int count = op->count;
     op->count = 0;
+    if (!count)
+        return DISK_RET_SUCCESS;
     u8 *cdbuf_fl = GET_GLOBAL(bounce_buf_fl);
+    u8 *buf_fl = op->buf_fl;
+
+    if (!drive_gf || (((op->lba | count) & 3) && !cdbuf_fl))
+        return DISK_RET_ENOTREADY;
 
     if (op->lba & 3) {
         // Partial read of first block.
         dop.count = 1;
         dop.buf_fl = cdbuf_fl;
         int ret = process_op(&dop);
-        if (ret)
-            return ret;
-        u8 thiscount = 4 - (op->lba & 3);
+        if (ret || dop.count != 1)
+            return ret ?: DISK_RET_ECONTROLLER;
+        int thiscount = 4 - (op->lba & 3);
         if (thiscount > count)
             thiscount = count;
         count -= thiscount;
-        memcpy_fl(op->buf_fl, cdbuf_fl + (op->lba & 3) * 512, thiscount * 512);
-        op->buf_fl += thiscount * 512;
+        memcpy_fl(buf_fl, cdbuf_fl + (op->lba & 3) * DISK_SECTOR_SIZE,
+                  thiscount * DISK_SECTOR_SIZE);
+        buf_fl += thiscount * DISK_SECTOR_SIZE;
         op->count += thiscount;
         dop.lba++;
     }
 
     if (count > 3) {
-        // Read n number of regular blocks.
-        dop.count = count / 4;
-        dop.buf_fl = op->buf_fl;
+        // Read complete optical blocks directly into the caller's buffer.
+        int blocks = count / 4;
+        dop.count = blocks;
+        dop.buf_fl = buf_fl;
         int ret = process_op(&dop);
+        if (dop.count > blocks)
+            return DISK_RET_ECONTROLLER;
         op->count += dop.count * 4;
-        if (ret)
-            return ret;
-        u8 thiscount = count & ~3;
-        count &= 3;
-        op->buf_fl += thiscount * 512;
-        dop.lba += thiscount / 4;
+        if (ret || dop.count != blocks)
+            return ret ?: DISK_RET_ECONTROLLER;
+        int thiscount = blocks * 4;
+        count -= thiscount;
+        buf_fl += thiscount * DISK_SECTOR_SIZE;
+        dop.lba += blocks;
     }
 
     if (count) {
-        // Partial read on last block.
+        // Partial read of last block.
         dop.count = 1;
         dop.buf_fl = cdbuf_fl;
         int ret = process_op(&dop);
-        if (ret)
-            return ret;
-        u8 thiscount = count;
-        memcpy_fl(op->buf_fl, cdbuf_fl, thiscount * 512);
-        op->count += thiscount;
+        if (ret || dop.count != 1)
+            return ret ?: DISK_RET_ECONTROLLER;
+        memcpy_fl(buf_fl, cdbuf_fl, count * DISK_SECTOR_SIZE);
+        op->count += count;
     }
 
     return DISK_RET_SUCCESS;
@@ -310,7 +319,7 @@ cdrom_media_info(struct drive_s *drive)
     dop.count = 1;
     dop.buf_fl = buffer;
     ret = process_op(&dop);
-    if (ret)
+    if (ret || dop.count != 1)
         return NULL;
 
     // Is it bootable?
@@ -325,7 +334,7 @@ cdrom_media_info(struct drive_s *drive)
     dop.count = 1;
     dop.buf_fl = buffer;
     ret = process_op(&dop);
-    if (ret)
+    if (ret || dop.count != 1)
         return NULL;
 
     // Read volume id, trim trailing spaces
