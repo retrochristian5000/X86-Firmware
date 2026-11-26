@@ -11,6 +11,7 @@
 #include "string.h" // memcpy
 #include "util.h"
 #include "std/acpi.h" // struct rsdp_descriptor
+#include "acpi-sta.h" // acpi_sta_present
 
 /****************************************************************
  * DSDT parser
@@ -20,7 +21,7 @@ struct acpi_device {
     struct hlist_node node;
     char name[16];
     u8 *hid_aml;
-    u8 *sta_aml;
+    int sta_status;
     u8 *crs_data;
     int crs_size;
 };
@@ -353,18 +354,21 @@ static int parse_pkg_device(struct parse_state *s,
 
     offset = parse_pkg_common(s, ptr, "device", &pkglength);
 
+    struct acpi_device *parent = s->dev;
     s->dev = malloc_tmp(sizeof(struct acpi_device));
     if (!s->dev) {
         warn_noalloc();
+        s->dev = parent;
         s->error = 1;
         return pkglength;
     }
 
     memset(s->dev, 0, sizeof(struct acpi_device));
     hlist_add_head(&s->dev->node, &acpi_devices);
-    strtcpy(s->dev->name, s->name, sizeof(s->name));
+    strtcpy(s->dev->name, s->name, sizeof(s->dev->name));
+    s->dev->sta_status = ACPI_STA_DEFAULT;
     parse_termlist(s, ptr, offset, pkglength);
-    s->dev = NULL;
+    s->dev = parent;
 
     return pkglength;
 }
@@ -401,9 +405,14 @@ static int parse_pkg_skip(struct parse_state *s,
 }
 
 static int parse_termobj(struct parse_state *s,
-                         u8 *ptr)
+                         u8 *ptr, int remaining)
 {
     int offset = 1;
+
+    if (remaining <= 0) {
+        s->error = 1;
+        return 0;
+    }
 
     if (s->depth == 16) {
         dprintf(1, "%s: deep recursion\n", __func__);
@@ -422,12 +431,20 @@ static int parse_termobj(struct parse_state *s,
         offset += parse_namestring(s, ptr + offset, "AliasObject");
         break;
     case 0x08: /* name op */
+        if (s->dev && remaining >= 5 && !memcmp(ptr + 1, "_STA", 4)) {
+            int status = ACPI_STA_UNKNOWN;
+            int used = acpi_sta_integer(ptr + 5, remaining - 5, &status);
+            s->dev->sta_status = status;
+            if (used) {
+                offset = 5 + used;
+                break;
+            }
+            // A nonliteral value is unknown, not an absent device.
+        }
         offset += parse_namestring(s, ptr + offset, "name");
-        offset += parse_termobj(s, ptr + offset);
+        offset += parse_termobj(s, ptr + offset, remaining - offset);
         if (s->dev && strcmp(s->name, "_HID") == 0)
             s->dev->hid_aml = ptr;
-        if (s->dev && strcmp(s->name, "_STA") == 0)
-            s->dev->sta_aml = ptr;
         break;
     case 0x0a: /* byte prefix */
         offset++;
@@ -453,11 +470,25 @@ static int parse_termobj(struct parse_state *s,
     case 0x13: /* var package op */
         offset += parse_pkg_skip(s, ptr + offset, ptr[0], 0);
         break;
-    case 0x14: /* method op */
-        offset += parse_pkg_skip(s, ptr + offset, ptr[0], 1);
-        if (s->dev && strcmp(s->name, "_STA") == 0)
-            s->dev->sta_aml = ptr;
+    case 0x14: { /* method op */
+        if (remaining < 2 || remaining - 1 < 1 + (ptr[1] >> 6)) {
+            s->error = 1;
+            break;
+        }
+        int pkglength;
+        int names = parse_pkglength(ptr + 1, &pkglength);
+        if (pkglength < names || pkglength > remaining - 1) {
+            s->error = 1;
+            break;
+        }
+        // Only a local four-byte NameSeg can be attributed to this device.
+        if (s->dev && pkglength - names >= 4
+            && !memcmp(ptr + 1 + names, "_STA", 4))
+            s->dev->sta_status = acpi_sta_method(ptr + 1 + names + 4,
+                                                pkglength - names - 4);
+        offset += pkglength;
         break;
+    }
     case 0x5b: /* ext op prefix */
         offset++;
         switch (ptr[1]) {
@@ -499,8 +530,8 @@ static int parse_termobj(struct parse_state *s,
 static void parse_termlist(struct parse_state *s,
                            u8 *ptr, int offset, int pkglength)
 {
-    for (;;) {
-        offset += parse_termobj(s, ptr + offset);
+    while (offset < pkglength) {
+        offset += parse_termobj(s, ptr + offset, pkglength - offset);
         if (offset == pkglength)
             return;
         if (offset > pkglength) {
@@ -546,21 +577,7 @@ static struct acpi_device *acpi_dsdt_find(struct acpi_device *prev,
 
 static int acpi_dsdt_present(struct acpi_device *dev)
 {
-    if (!dev)
-        return 0; /* no */
-    if (!dev->sta_aml)
-        return 1; /* yes */
-    if (dev->sta_aml[0] == 0x14)
-        return -1; /* unknown (can't evaluate method) */
-    if (dev->sta_aml[0] == 0x08) {
-        u64 value = 0;
-        parse_termarg_int(dev->sta_aml + 5, NULL, &value);
-        if (value == 0)
-            return 0; /* no */
-        else
-            return 1; /* yes */
-    }
-    return -1; /* unknown (should not happen) */
+    return dev ? acpi_sta_present(dev->sta_status) : 0;
 }
 
 /****************************************************************
@@ -631,8 +648,16 @@ int acpi_dsdt_present_eisaid(u16 eisaid)
     if (hlist_empty(&acpi_devices))
         return -1; /* unknown (no dsdt table) */
 
-    struct acpi_device *dev = acpi_dsdt_find_eisaid(NULL, eisaid);
-    return acpi_dsdt_present(dev);
+    int present = 0;
+    struct acpi_device *dev = NULL;
+    while ((dev = acpi_dsdt_find_eisaid(dev, eisaid))) {
+        int status = acpi_dsdt_present(dev);
+        if (status > 0)
+            return 1;
+        if (status < 0)
+            present = ACPI_STA_UNKNOWN;
+    }
+    return present;
 }
 
 void acpi_dsdt_parse(void)
@@ -663,8 +688,7 @@ void acpi_dsdt_parse(void)
         dprintf(1, "    %s", acpi_dsdt_name(dev));
         if (dev->hid_aml)
             dprintf(1, ", hid");
-        if (dev->sta_aml)
-            dprintf(1, ", sta (0x%x)", dev->sta_aml[0]);
+        dprintf(1, ", sta (0x%x)", dev->sta_status);
         if (dev->crs_data)
             dprintf(1, ", crs");
         dprintf(1, "\n");
