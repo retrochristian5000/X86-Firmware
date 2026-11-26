@@ -134,54 +134,57 @@ apm_shutdown(void)
         hlt();
 }
 
+// APM 1.0 also uses FFFFh for the all-devices ID.
+static int
+apm_all_devices(u16 device)
+{
+    return device == 1 || device == 0xffff;
+}
+
 // APM Set Power State
 static void
 handle_155307(struct bregs *regs)
 {
-    if (GET_GLOBAL(ApmPowerSnapshot.version) == WHP_APM_POWER_VERSION) {
-        if (regs->bx != 1) {
-            set_code_invalid_silent(regs, 0x09); // unknown power device
-            return;
-        }
-        switch (regs->cx) {
-        case 1: // standby
-        case 2: // suspend
-            // No emulated sleep controller exists. Never report a fake sleep.
-            set_code_invalid_silent(regs, 0x60); // cannot enter state
-            return;
-        case 3: // off (existing ACPI poweroff path)
-            apm_shutdown();
-            return;
-        case 4: // pending request notification
-        case 5: // rejected request notification
-            set_success(regs);
-            return;
-        default:
-            set_code_invalid_silent(regs, 0x0a); // invalid state ID
-            return;
-        }
-    }
-    if (regs->bx != 1) {
-        set_success(regs);
+    if (!apm_all_devices(regs->bx)) {
+        set_code_invalid_silent(regs, 0x09);
         return;
     }
     switch (regs->cx) {
-    case 1:
-        dprintf(1, "APM standby request\n");
-        break;
-    case 2:
-        dprintf(1, "APM suspend request\n");
-        break;
-    case 3:
+    case 1: // standby
+    case 2: // suspend
+        // No APM sleep/resume implementation, even on a desktop.
+        set_code_invalid_silent(regs, 0x60);
+        return;
+    case 3: // off
+        if (!GET_GLOBAL(acpi_pm1a_cnt)) {
+            set_code_invalid_silent(regs, 0x60);
+            return;
+        }
         apm_shutdown();
-        break;
+        return;
+    case 4: // pending request notification
+    case 5: // rejected request notification
+        set_success(regs);
+        return;
+    default:
+        set_code_invalid_silent(regs, 0x0a);
+        return;
     }
-    set_success(regs);
 }
 
 static void
 handle_155308(struct bregs *regs)
 {
+    if (!apm_all_devices(regs->bx)) {
+        set_code_invalid_silent(regs, 0x09);
+        return;
+    }
+    if (regs->cx > 1) {
+        set_code_invalid_silent(regs, 0x0a);
+        return;
+    }
+    // No autonomous device power policy is implemented.
+    // Preserve valid legacy requests until cross-mode state is available.
     set_success(regs);
 }
 
@@ -189,14 +192,14 @@ handle_155308(struct bregs *regs)
 static void
 handle_15530a(struct bregs *regs)
 {
-    if (GET_GLOBAL(ApmPowerSnapshot.version) == WHP_APM_POWER_VERSION) {
-        u16 device = regs->bx;
-        u8 units = GET_GLOBAL(ApmPowerSnapshot.units);
-        if ((device != 1 && device != 0x8001)
-            || (device == 0x8001 && !units)) {
-            set_code_invalid_silent(regs, 0x09);
-            return;
-        }
+    int snapshot = GET_GLOBAL(ApmPowerSnapshot.version)
+                   == WHP_APM_POWER_VERSION;
+    u8 units = snapshot ? GET_GLOBAL(ApmPowerSnapshot.units) : 0;
+    if (regs->bx != 1 && (regs->bx != 0x8001 || !units)) {
+        set_code_invalid_silent(regs, 0x09);
+        return;
+    }
+    if (snapshot) {
         regs->bh = GET_GLOBAL(ApmPowerSnapshot.ac_line);
         regs->bl = GET_GLOBAL(ApmPowerSnapshot.battery_status);
         regs->ch = GET_GLOBAL(ApmPowerSnapshot.battery_flags);
@@ -210,7 +213,7 @@ handle_15530a(struct bregs *regs)
     regs->bh = 0x01; // on line
     regs->bl = 0xff; // unknown battery status
     regs->ch = 0x80; // no system battery
-    regs->cl = 0xff; // unknown remaining time
+    regs->cl = 0xff; // unknown remaining percentage
     regs->dx = 0xffff; // unknown remaining time
     regs->si = 0x00; // zero battery
     set_success(regs);
@@ -229,8 +232,15 @@ handle_15530b(struct bregs *regs)
 static void
 handle_15530e(struct bregs *regs)
 {
-    regs->ah = 1;
-    regs->al = 2;
+    if (regs->bx != 0) {
+        set_code_invalid_silent(regs, 0x09);
+        return;
+    }
+    // Negotiate no higher than the driver's requested version.
+    // The negotiated version is not yet persisted across entry modes.
+    regs->ax = regs->cx < 0x0102 ? regs->cx : 0x0102;
+    if (regs->ax < 0x0100)
+        regs->ax = 0x0100;
     set_success(regs);
 }
 
@@ -238,6 +248,15 @@ handle_15530e(struct bregs *regs)
 static void
 handle_15530f(struct bregs *regs)
 {
+    if (regs->bx != 1) {
+        set_code_invalid_silent(regs, 0x09);
+        return;
+    }
+    if (regs->cx > 1) {
+        set_code_invalid_silent(regs, 0x0a);
+        return;
+    }
+    // Valid requests remain compatibility no-ops.
     set_success(regs);
 }
 
@@ -245,11 +264,11 @@ handle_15530f(struct bregs *regs)
 static void
 handle_155310(struct bregs *regs)
 {
+    if (regs->bx != 0) {
+        set_code_invalid_silent(regs, 0x09);
+        return;
+    }
     if (GET_GLOBAL(ApmPowerSnapshot.version) == WHP_APM_POWER_VERSION) {
-        if (regs->bx != 0) {
-            set_code_invalid_silent(regs, 0x09);
-            return;
-        }
         regs->bl = GET_GLOBAL(ApmPowerSnapshot.units);
     } else {
         regs->bl = 0;
@@ -273,7 +292,11 @@ handle_1553(struct bregs *regs)
         return;
     }
 
-    //debug_stub(regs);
+    // BIOS installation, connect, disconnect and version calls use BX=0.
+    if (regs->al <= 4 && regs->bx != 0) {
+        set_code_invalid_silent(regs, 0x09);
+        return;
+    }
     switch (regs->al) {
     case 0x00: handle_155300(regs); break;
     case 0x01: handle_155301(regs); break;
