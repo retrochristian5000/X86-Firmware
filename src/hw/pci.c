@@ -16,6 +16,13 @@
 
 static u32 mmconfig;
 
+/* CAM addresses only the first 256 bytes; ECAM addresses one 4 KiB function. */
+static inline int
+pci_reg_valid(u32 addr, unsigned size, unsigned limit)
+{
+    return addr <= limit - size && !(addr & (size - 1));
+}
+
 static void *mmconfig_addr(u16 bdf, u32 addr)
 {
     return (void*)(mmconfig + ((u32)bdf << 12) + addr);
@@ -28,6 +35,8 @@ static u32 ioconfig_cmd(u16 bdf, u32 addr)
 
 void pci_ioconfig_writel(u16 bdf, u32 addr, u32 val)
 {
+    if (!pci_reg_valid(addr, 4, 256))
+        return;
     outl(ioconfig_cmd(bdf, addr), PORT_PCI_CMD);
     outl(val, PORT_PCI_DATA);
 }
@@ -35,6 +44,8 @@ void pci_ioconfig_writel(u16 bdf, u32 addr, u32 val)
 void pci_config_writel(u16 bdf, u32 addr, u32 val)
 {
     if (!MODESEGMENT && mmconfig) {
+        if (!pci_reg_valid(addr, 4, 4096))
+            return;
         writel(mmconfig_addr(bdf, addr), val);
     } else {
         pci_ioconfig_writel(bdf, addr, val);
@@ -43,6 +54,8 @@ void pci_config_writel(u16 bdf, u32 addr, u32 val)
 
 void pci_ioconfig_writew(u16 bdf, u32 addr, u16 val)
 {
+    if (!pci_reg_valid(addr, 2, 256))
+        return;
     outl(ioconfig_cmd(bdf, addr), PORT_PCI_CMD);
     outw(val, PORT_PCI_DATA + (addr & 2));
 }
@@ -50,6 +63,8 @@ void pci_ioconfig_writew(u16 bdf, u32 addr, u16 val)
 void pci_config_writew(u16 bdf, u32 addr, u16 val)
 {
     if (!MODESEGMENT && mmconfig) {
+        if (!pci_reg_valid(addr, 2, 4096))
+            return;
         writew(mmconfig_addr(bdf, addr), val);
     } else {
         pci_ioconfig_writew(bdf, addr, val);
@@ -58,6 +73,8 @@ void pci_config_writew(u16 bdf, u32 addr, u16 val)
 
 void pci_ioconfig_writeb(u16 bdf, u32 addr, u8 val)
 {
+    if (!pci_reg_valid(addr, 1, 256))
+        return;
     outl(ioconfig_cmd(bdf, addr), PORT_PCI_CMD);
     outb(val, PORT_PCI_DATA + (addr & 3));
 }
@@ -65,6 +82,8 @@ void pci_ioconfig_writeb(u16 bdf, u32 addr, u8 val)
 void pci_config_writeb(u16 bdf, u32 addr, u8 val)
 {
     if (!MODESEGMENT && mmconfig) {
+        if (!pci_reg_valid(addr, 1, 4096))
+            return;
         writeb(mmconfig_addr(bdf, addr), val);
     } else {
         pci_ioconfig_writeb(bdf, addr, val);
@@ -73,6 +92,8 @@ void pci_config_writeb(u16 bdf, u32 addr, u8 val)
 
 u32 pci_ioconfig_readl(u16 bdf, u32 addr)
 {
+    if (!pci_reg_valid(addr, 4, 256))
+        return 0xffffffffU;
     outl(ioconfig_cmd(bdf, addr), PORT_PCI_CMD);
     return inl(PORT_PCI_DATA);
 }
@@ -80,6 +101,8 @@ u32 pci_ioconfig_readl(u16 bdf, u32 addr)
 u32 pci_config_readl(u16 bdf, u32 addr)
 {
     if (!MODESEGMENT && mmconfig) {
+        if (!pci_reg_valid(addr, 4, 4096))
+            return 0xffffffffU;
         return readl(mmconfig_addr(bdf, addr));
     } else {
         return pci_ioconfig_readl(bdf, addr);
@@ -88,6 +111,8 @@ u32 pci_config_readl(u16 bdf, u32 addr)
 
 u16 pci_ioconfig_readw(u16 bdf, u32 addr)
 {
+    if (!pci_reg_valid(addr, 2, 256))
+        return 0xffff;
     outl(ioconfig_cmd(bdf, addr), PORT_PCI_CMD);
     return inw(PORT_PCI_DATA + (addr & 2));
 }
@@ -95,6 +120,8 @@ u16 pci_ioconfig_readw(u16 bdf, u32 addr)
 u16 pci_config_readw(u16 bdf, u32 addr)
 {
     if (!MODESEGMENT && mmconfig) {
+        if (!pci_reg_valid(addr, 2, 4096))
+            return 0xffff;
         return readw(mmconfig_addr(bdf, addr));
     } else {
         return pci_ioconfig_readw(bdf, addr);
@@ -103,6 +130,8 @@ u16 pci_config_readw(u16 bdf, u32 addr)
 
 u8 pci_ioconfig_readb(u16 bdf, u32 addr)
 {
+    if (!pci_reg_valid(addr, 1, 256))
+        return 0xff;
     outl(ioconfig_cmd(bdf, addr), PORT_PCI_CMD);
     return inb(PORT_PCI_DATA + (addr & 3));
 }
@@ -110,6 +139,8 @@ u8 pci_ioconfig_readb(u16 bdf, u32 addr)
 u8 pci_config_readb(u16 bdf, u32 addr)
 {
     if (!MODESEGMENT && mmconfig) {
+        if (!pci_reg_valid(addr, 1, 4096))
+            return 0xff;
         return readb(mmconfig_addr(bdf, addr));
     } else {
         return pci_ioconfig_readb(bdf, addr);
@@ -127,8 +158,14 @@ pci_config_maskw(u16 bdf, u32 addr, u16 off, u16 on)
 void
 pci_enable_mmconfig(u64 addr, const char *name)
 {
-    if (addr >= 0x100000000ll)
+    /* This implementation maps all 256 buses below 4 GiB. */
+    mmconfig = 0;
+    if (!addr)
         return;
+    if (addr > 0xf0000000ULL || (addr & 0x0fffffffULL)) {
+        dprintf(1, "PCIe: invalid %s mmconfig base 0x%llx\n", name, addr);
+        return;
+    }
     dprintf(1, "PCIe: using %s mmconfig at 0x%llx\n", name, addr);
     mmconfig = addr;
 }
