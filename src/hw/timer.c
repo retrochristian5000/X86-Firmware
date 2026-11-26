@@ -192,8 +192,8 @@ timer_read(void)
     if (CONFIG_PMTIMER && port != PORT_PIT_COUNTER0)
         // Read from PMTIMER
         return timer_adjust_bits(inl(port), 0xffffff);
-    // Read from PIT.
-    outb(PM_SEL_READBACK | PM_READ_VALUE | PM_READ_COUNTER0, PORT_PIT_MODE);
+    // Latch channel 0 using the command shared by the 8253 and 8254.
+    outb(PM_SEL_TIMER0 | PM_ACCESS_LATCH, PORT_PIT_MODE);
     // The PIT supplies the low byte first. Separate the port reads so
     // compiler operand evaluation order cannot reverse the two bytes.
     u8 low = inb(PORT_PIT_COUNTER0);
