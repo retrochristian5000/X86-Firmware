@@ -71,9 +71,9 @@ pci_probe_devices(void)
             if (v == PCI_HEADER_TYPE_BRIDGE || v == PCI_HEADER_TYPE_CARDBUS) {
                 u8 secbus = pci_config_readb(bdf, PCI_SECONDARY_BUS);
                 u8 subbus = pci_config_readb(bdf, PCI_SUBORDINATE_BUS);
-                dev->secondary_bus = secbus;
                 // A closed forwarding window is not an enumerated bus.
                 if (secbus > bus && secbus <= subbus) {
+                    dev->secondary_bus = secbus;
                     if (!busdevs[secbus])
                         busdevs[secbus] = dev;
                     if (secbus > MaxPCIBus)
