@@ -629,6 +629,12 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
             dprintf(2, "PCI: primary bus = 0x%x\n", pribus);
         }
 
+        if (*pci_bus == 0xff) {
+            // The first pass left this bridge's forwarding window closed.
+            dprintf(1, "PCI: no bus numbers left for bridge %pP\n", bdf);
+            continue;
+        }
+
         u8 secbus = pci_config_readb(bdf, PCI_SECONDARY_BUS);
         (*pci_bus)++;
         if (*pci_bus != secbus) {
@@ -647,35 +653,23 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
 
         pci_bios_init_bus_rec(secbus, pci_bus);
 
-        if (subbus != *pci_bus) {
-            u8 res_bus = *pci_bus;
-            u8 cap = pci_find_resource_reserve_capability(bdf);
-
-            if (cap) {
-                u32 tmp_res_bus = pci_config_readl(bdf,
-                        cap + RES_RESERVE_BUS_RES);
-                if (tmp_res_bus != (u32)-1) {
-                    res_bus = tmp_res_bus & 0xFF;
-                    if ((u8)(res_bus + secbus) < secbus ||
-                            (u8)(res_bus + secbus) < res_bus) {
-                        dprintf(1, "PCI: bus_reserve value %d is invalid\n",
-                                res_bus);
-                        res_bus = 0;
-                    }
-                    if (secbus + res_bus > *pci_bus) {
-                        dprintf(1, "PCI: QEMU resource reserve cap: bus = %u\n",
-                                res_bus);
-                        res_bus = secbus + res_bus;
-                    }
+        // A reservation can extend, but never shrink, the discovered
+        // subordinate range. Interpret the reservation before narrowing.
+        u8 cap = pci_find_resource_reserve_capability(bdf);
+        if (cap) {
+            u32 reserve = pci_config_readl(bdf, cap + RES_RESERVE_BUS_RES);
+            if (reserve != (u32)-1) {
+                if (reserve > 255U - secbus) {
+                    dprintf(1, "PCI: bus_reserve value %u is invalid\n",
+                            reserve);
+                } else if (secbus + reserve > *pci_bus) {
+                    *pci_bus = secbus + reserve;
                 }
             }
-            dprintf(2, "PCI: subordinate bus = 0x%x -> 0x%x\n",
-                    subbus, res_bus);
-            subbus = res_bus;
-            *pci_bus = res_bus;
-        } else {
-            dprintf(2, "PCI: subordinate bus = 0x%x\n", subbus);
         }
+        dprintf(2, "PCI: subordinate bus = 0x%x -> 0x%x\n",
+                subbus, *pci_bus);
+        subbus = *pci_bus;
         pci_config_writeb(bdf, PCI_SUBORDINATE_BUS, subbus);
     }
 }
