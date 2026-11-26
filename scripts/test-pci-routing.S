@@ -21,7 +21,11 @@ _start:
     movw $0x600, %di
     movw $0xb10e, %ax
     xorw %bx, %bx
+    pushw %ds
+    movw $0xf000, %dx
+    movw %dx, %ds
     int $0x1a
+    popw %ds
     jnc fail16
     cmpb $0x89, %ah
     jne fail16
@@ -29,7 +33,11 @@ _start:
     jne fail16
     movw $0xb10e, %ax
     xorw %bx, %bx
+    pushw %ds
+    movw $0xf000, %dx
+    movw %dx, %ds
     int $0x1a
+    popw %ds
     jc fail16
     cmpw $0x5000, 0x760
     jne fail16
