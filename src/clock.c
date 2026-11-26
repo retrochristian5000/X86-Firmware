@@ -29,6 +29,27 @@ bcd2bin(u8 val)
 
 u8 Century VARLOW;
 
+// Read a coherent RTC time or date triplet without halting the clock.
+// The seconds check also catches an update that completes during the read.
+static int
+rtc_read_triplet(u8 high, u8 middle, u8 low, u32 *value)
+{
+    for (int i = 0; i < 3; i++) {
+        if (rtc_updating())
+            break;
+        u8 seconds = rtc_read(CMOS_RTC_SECONDS);
+        u32 data = (u32)rtc_read(high) << 16;
+        data |= (u32)rtc_read(middle) << 8;
+        data |= rtc_read(low);
+        if (!(rtc_read(CMOS_STATUS_A) & RTC_A_UIP)
+            && seconds == rtc_read(CMOS_RTC_SECONDS)) {
+            *value = data;
+            return 0;
+        }
+    }
+    return -1;
+}
+
 void
 clock_setup(void)
 {
@@ -36,12 +57,19 @@ clock_setup(void)
     pit_setup();
 
     rtc_setup();
-    rtc_updating();
-    u32 seconds = bcd2bin(rtc_read(CMOS_RTC_SECONDS));
-    u32 minutes = bcd2bin(rtc_read(CMOS_RTC_MINUTES));
-    u32 hours = bcd2bin(rtc_read(CMOS_RTC_HOURS));
-    u32 ticks = ticks_from_ms(((hours * 60 + minutes) * 60 + seconds) * 1000);
-    SET_BDA(timer_counter, ticks % TICKS_PER_DAY);
+    u32 time;
+    if (!rtc_read_triplet(CMOS_RTC_HOURS, CMOS_RTC_MINUTES,
+                          CMOS_RTC_SECONDS, &time)) {
+        u32 seconds = bcd2bin(time);
+        u32 minutes = bcd2bin(time >> 8);
+        u32 hours = bcd2bin(time >> 16);
+        u32 ticks = ticks_from_ms(((hours * 60 + minutes) * 60 + seconds)
+                                  * 1000);
+        SET_BDA(timer_counter, ticks % TICKS_PER_DAY);
+    } else {
+        dprintf(1, "RTC time unavailable during clock setup\n");
+        SET_BDA(timer_counter, 0);
+    }
 
     // Setup Century storage
     if (CONFIG_QEMU) {
@@ -94,14 +122,16 @@ handle_1a01(struct bregs *regs)
 static void
 handle_1a02(struct bregs *regs)
 {
-    if (rtc_updating()) {
+    u32 time;
+    if (rtc_read_triplet(CMOS_RTC_HOURS, CMOS_RTC_MINUTES,
+                         CMOS_RTC_SECONDS, &time)) {
         set_invalid(regs);
         return;
     }
 
-    regs->dh = rtc_read(CMOS_RTC_SECONDS);
-    regs->cl = rtc_read(CMOS_RTC_MINUTES);
-    regs->ch = rtc_read(CMOS_RTC_HOURS);
+    regs->dh = time;
+    regs->cl = time >> 8;
+    regs->ch = time >> 16;
     regs->dl = rtc_read(CMOS_STATUS_B) & RTC_B_DSE;
     regs->ah = 0;
     regs->al = regs->ch;
@@ -143,13 +173,15 @@ static void
 handle_1a04(struct bregs *regs)
 {
     regs->ah = 0;
-    if (rtc_updating()) {
+    u32 date;
+    if (rtc_read_triplet(CMOS_RTC_YEAR, CMOS_RTC_MONTH,
+                         CMOS_RTC_DAY_MONTH, &date)) {
         set_invalid(regs);
         return;
     }
-    regs->cl = rtc_read(CMOS_RTC_YEAR);
-    regs->dh = rtc_read(CMOS_RTC_MONTH);
-    regs->dl = rtc_read(CMOS_RTC_DAY_MONTH);
+    regs->cl = date >> 16;
+    regs->dh = date >> 8;
+    regs->dl = date;
     regs->ch = GET_LOW(Century);
     regs->al = regs->ch;
     set_success(regs);
