@@ -15,80 +15,32 @@
 #include "string.h" // checksum
 #include "util.h" // PirAddr
 
+// QEMU i440fx has 32 root-bus device numbers; slot zero is the host
+// bridge. Retain the original six entries, and describe additional
+// occupied root-bus slots without reserving F-segment space for empty ones.
+#define PIR_ROOT_SLOTS 31
+#define PIR_LEGACY_SLOTS 6
+#define PIIX_PIRQ_BITMAP 0xdef8
+
 struct pir_table {
     struct pir_header pir;
-    struct pir_slot slots[6];
+    struct pir_slot slots[PIR_ROOT_SLOTS];
 } PACKED;
 
-static struct pir_table PIR_TABLE = {
-    .pir = {
-        .version = 0x0100,
-        .size = sizeof(struct pir_table),
-    },
-    .slots = {
-        {
-            // first slot entry PCI-to-ISA (embedded)
-            .dev = 1<<3,
-            .links = {
-                {.link = 0x60, .bitmap = 0xdef8}, // INTA#
-                {.link = 0x61, .bitmap = 0xdef8}, // INTB#
-                {.link = 0x62, .bitmap = 0xdef8}, // INTC#
-                {.link = 0x63, .bitmap = 0xdef8}, // INTD#
-            },
-            .slot_nr = 0, // embedded
-        }, {
-            // second slot entry: 1st PCI slot
-            .dev = 2<<3,
-            .links = {
-                {.link = 0x61, .bitmap = 0xdef8}, // INTA#
-                {.link = 0x62, .bitmap = 0xdef8}, // INTB#
-                {.link = 0x63, .bitmap = 0xdef8}, // INTC#
-                {.link = 0x60, .bitmap = 0xdef8}, // INTD#
-            },
-            .slot_nr = 1,
-        }, {
-            // third slot entry: 2nd PCI slot
-            .dev = 3<<3,
-            .links = {
-                {.link = 0x62, .bitmap = 0xdef8}, // INTA#
-                {.link = 0x63, .bitmap = 0xdef8}, // INTB#
-                {.link = 0x60, .bitmap = 0xdef8}, // INTC#
-                {.link = 0x61, .bitmap = 0xdef8}, // INTD#
-            },
-            .slot_nr = 2,
-        }, {
-            // 4th slot entry: 3rd PCI slot
-            .dev = 4<<3,
-            .links = {
-                {.link = 0x63, .bitmap = 0xdef8}, // INTA#
-                {.link = 0x60, .bitmap = 0xdef8}, // INTB#
-                {.link = 0x61, .bitmap = 0xdef8}, // INTC#
-                {.link = 0x62, .bitmap = 0xdef8}, // INTD#
-            },
-            .slot_nr = 3,
-        }, {
-            // 5th slot entry: 4th PCI slot
-            .dev = 5<<3,
-            .links = {
-                {.link = 0x60, .bitmap = 0xdef8}, // INTA#
-                {.link = 0x61, .bitmap = 0xdef8}, // INTB#
-                {.link = 0x62, .bitmap = 0xdef8}, // INTC#
-                {.link = 0x63, .bitmap = 0xdef8}, // INTD#
-            },
-            .slot_nr = 4,
-        }, {
-            // 6th slot entry: 5th PCI slot
-            .dev = 6<<3,
-            .links = {
-                {.link = 0x61, .bitmap = 0xdef8}, // INTA#
-                {.link = 0x62, .bitmap = 0xdef8}, // INTB#
-                {.link = 0x63, .bitmap = 0xdef8}, // INTC#
-                {.link = 0x60, .bitmap = 0xdef8}, // INTD#
-            },
-            .slot_nr = 5,
-        },
+static void
+pir_add_slot(struct pir_table *table, int dev)
+{
+    struct pir_slot *slot = &table->slots[
+        (table->pir.size - sizeof(table->pir)) / sizeof(*slot)];
+    slot->dev = dev << 3;
+    // QEMU pc_pci_slot_get_pirq(): rotate INTA-D by device number minus one.
+    for (int pin = 0; pin < 4; pin++) {
+        slot->links[pin].link = 0x60 + ((dev - 1 + pin) & 3);
+        slot->links[pin].bitmap = PIIX_PIRQ_BITMAP;
     }
-};
+    slot->slot_nr = dev - 1;
+    table->pir.size += sizeof(*slot);
+}
 
 void
 pirtable_setup(void)
@@ -108,11 +60,28 @@ pirtable_setup(void)
 
     dprintf(3, "init PIIX PIR table\n");
 
-    PIR_TABLE.pir.router_bus = pci_bdf_to_bus(router->bdf);
-    PIR_TABLE.pir.router_devfunc = pci_bdf_to_devfn(router->bdf);
-    PIR_TABLE.pir.compatible_devid = ((u32)router->device << 16)
-                                    | router->vendor;
-    PIR_TABLE.pir.signature = PIR_SIGNATURE;
-    PIR_TABLE.pir.checksum -= checksum(&PIR_TABLE, sizeof(PIR_TABLE));
-    copy_pir(&PIR_TABLE);
+    struct pir_table table;
+    memset(&table, 0, sizeof(table));
+    table.pir.version = 0x0100;
+    table.pir.size = sizeof(table.pir);
+    table.pir.router_bus = pci_bdf_to_bus(router->bdf);
+    table.pir.router_devfunc = pci_bdf_to_devfn(router->bdf);
+    table.pir.compatible_devid = ((u32)router->device << 16)
+                                | router->vendor;
+    table.pir.signature = PIR_SIGNATURE;
+
+    u32 occupied = 0;
+    struct pci_device *pci;
+    foreachpci(pci) {
+        if (!pci_bdf_to_bus(pci->bdf))
+            occupied |= 1U << pci_bdf_to_dev(pci->bdf);
+    }
+
+    for (int dev = 1; dev <= PIR_ROOT_SLOTS; dev++) {
+        if (dev <= PIR_LEGACY_SLOTS || (occupied & (1U << dev)))
+            pir_add_slot(&table, dev);
+    }
+
+    table.pir.checksum = -checksum(&table, table.pir.size);
+    copy_pir(&table);
 }
