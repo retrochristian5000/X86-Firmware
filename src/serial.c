@@ -24,15 +24,36 @@ detect_serial(u16 port, u8 timeout, u8 count)
     if (CONFIG_DEBUG_SERIAL && port == CONFIG_DEBUG_SERIAL_PORT
         && !romfile_loadint("etc/advertise-serial-debug-port", 1))
         return 0;
-    outb(0x02, port+SEROFF_IER);
-    u8 ier = inb(port+SEROFF_IER);
-    if (ier != 0x02)
-        return 0;
-    u8 iir = inb(port+SEROFF_IIR);
-    if ((iir & 0x3f) != 0x02)
-        return 0;
+    // Select IER rather than the high baud-rate divisor latch.
+    u8 lcr = inb(port+SEROFF_LCR);
+    if (lcr & 0x80) {
+        outb(lcr & ~0x80, port+SEROFF_LCR);
+        if (inb(port+SEROFF_LCR) & 0x80) {
+            outb(lcr, port+SEROFF_LCR);
+            return 0;
+        }
+    }
 
+    u8 ier = inb(port+SEROFF_IER);
     outb(0x00, port+SEROFF_IER);
+    u8 disabled = inb(port+SEROFF_IER);
+    outb(0x02, port+SEROFF_IER);
+    u8 enabled = inb(port+SEROFF_IER);
+
+    // Verify register readback without requiring an idle transmitter.
+    int found = disabled == 0x00 && enabled == 0x02;
+    if (found) {
+        u8 iir = inb(port+SEROFF_IIR) & 0x3f;
+        found = iir == 0x01 || iir == 0x02;
+    }
+
+    // Leave detected ports with UART interrupts disabled, as before.
+    // Restore the original interrupt state if detection failed.
+    outb(found ? 0x00 : ier, port+SEROFF_IER);
+    if (lcr & 0x80)
+        outb(lcr, port+SEROFF_LCR);
+    if (!found)
+        return 0;
     SET_BDA(port_com[count], port);
     SET_BDA(com_timeout[count], timeout);
     return 1;
