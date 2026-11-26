@@ -108,6 +108,8 @@ const u8 pci_irqs[4] = {
     10, 10, 11, 11
 };
 
+static u8 piix_pci_irqs[4] = { 10, 10, 11, 11 };
+
 static int dummy_pci_slot_get_irq(struct pci_device *pci, int pin)
 {
     dprintf(1, "pci_slot_get_irq called with unknown routing\n");
@@ -128,7 +130,8 @@ static int piix_pci_slot_get_irq(struct pci_device *pci, int pin)
         pci = pci->parent;
     }
     slot_addend += pci_bdf_to_dev(pci->bdf) - 1;
-    return pci_irqs[(pin - 1 + slot_addend) & 3];
+    u8 irq = piix_pci_irqs[(pin - 1 + slot_addend) & 3];
+    return irq == 0x80 ? 0xff : irq;
 }
 
 static int mch_pci_slot_get_irq(struct pci_device *pci, int pin)
@@ -156,9 +159,10 @@ static void piix_isa_bridge_setup(struct pci_device *pci, void *arg)
     elcr[0] = 0x00;
     elcr[1] = 0x00;
     for (i = 0; i < 4; i++) {
-        irq = pci_irqs[i];
-        /* set to trigger level */
-        elcr[irq >> 3] |= (1 << (irq & 7));
+        irq = piix_pci_irqs[i];
+        /* Leave reserved ISA interrupt lines edge-triggered. */
+        if (irq != 0x80)
+            elcr[irq >> 3] |= (1 << (irq & 7));
         /* activate irq remapping in PIIX */
         pci_config_writeb(pci->bdf, 0x60 + i, irq);
     }
@@ -473,6 +477,19 @@ static void i440fx_mem_addr_setup(struct pci_device *dev, void *arg)
         pcimem_start = 0x80000000;
     else if (RamSize <= 0xc0000000)
         pcimem_start = 0xc0000000;
+
+    u16 reserved = romfile_loadint("etc/isa-ne2000-irq-mask", 0);
+    for (int i = 0; i < 4; i++) {
+        u8 irq = pci_irqs[i];
+        if (reserved & (1U << irq)) {
+            irq = irq == 10 ? 11 : 10;
+            if (reserved & (1U << irq))
+                irq = 0x80;
+        }
+        piix_pci_irqs[i] = irq;
+    }
+    if (piix_pci_irqs[0] == 0x80)
+        dprintf(1, "PCI IRQ10/11 reserved by ISA NICs; PIIX routing disabled\n");
 
     pci_slot_get_irq = piix_pci_slot_get_irq;
 }
