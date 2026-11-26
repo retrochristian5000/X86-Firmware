@@ -69,11 +69,13 @@ serial_debug(char c)
     if (!CONFIG_DEBUG_SERIAL && (!CONFIG_DEBUG_SERIAL_MMIO || MODESEGMENT))
         return;
     int timeout = DEBUG_TIMEOUT;
-    while ((serial_debug_read(SEROFF_LSR) & 0x20) != 0x20)
+    while (!(serial_debug_read(SEROFF_LSR) & SER_LSR_THRE))
         if (!timeout--)
             // Ran out of time.
             return;
-    serial_debug_write(SEROFF_DATA, c);
+    // A guest may be programming the divisor; never overwrite it with a log.
+    if (!(serial_debug_read(SEROFF_LCR) & SER_LCR_DLAB))
+        serial_debug_write(SEROFF_DATA, c);
 }
 
 void
@@ -91,7 +93,8 @@ serial_debug_flush(void)
     if (!CONFIG_DEBUG_SERIAL && (!CONFIG_DEBUG_SERIAL_MMIO || MODESEGMENT))
         return;
     int timeout = DEBUG_TIMEOUT;
-    while ((serial_debug_read(SEROFF_LSR) & 0x60) != 0x60)
+    while ((serial_debug_read(SEROFF_LSR) & (SER_LSR_THRE | SER_LSR_TEMT))
+           != (SER_LSR_THRE | SER_LSR_TEMT))
         if (!timeout--)
             // Ran out of time.
             return;

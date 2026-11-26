@@ -18,6 +18,28 @@
  * COM ports
  ****************************************************************/
 
+// Select the ordinary UART register bank without changing the baud rate.
+static int
+serial_select_data(u16 port)
+{
+    u8 lcr = inb(port+SEROFF_LCR);
+    if (lcr & SER_LCR_DLAB) {
+        outb(lcr & ~SER_LCR_DLAB, port+SEROFF_LCR);
+        if (inb(port+SEROFF_LCR) & SER_LCR_DLAB) {
+            outb(lcr, port+SEROFF_LCR);
+            return -1;
+        }
+    }
+    return lcr;
+}
+
+static inline void
+serial_restore_lcr(u16 port, u8 lcr)
+{
+    if (lcr & SER_LCR_DLAB)
+        outb(lcr, port+SEROFF_LCR);
+}
+
 static u16
 detect_serial(u16 port, u8 timeout, u8 count)
 {
@@ -25,33 +47,27 @@ detect_serial(u16 port, u8 timeout, u8 count)
         && !romfile_loadint("etc/advertise-serial-debug-port", 1))
         return 0;
     // Select IER rather than the high baud-rate divisor latch.
-    u8 lcr = inb(port+SEROFF_LCR);
-    if (lcr & 0x80) {
-        outb(lcr & ~0x80, port+SEROFF_LCR);
-        if (inb(port+SEROFF_LCR) & 0x80) {
-            outb(lcr, port+SEROFF_LCR);
-            return 0;
-        }
-    }
+    int lcr = serial_select_data(port);
+    if (lcr < 0)
+        return 0;
 
     u8 ier = inb(port+SEROFF_IER);
     outb(0x00, port+SEROFF_IER);
     u8 disabled = inb(port+SEROFF_IER);
-    outb(0x02, port+SEROFF_IER);
+    outb(SER_IER_THRE, port+SEROFF_IER);
     u8 enabled = inb(port+SEROFF_IER);
 
-    // Verify register readback without requiring an idle transmitter.
-    int found = disabled == 0x00 && enabled == 0x02;
+    // Ignore FIFO capability bits, including the 16750's 64-byte flag.
+    int found = disabled == 0x00 && enabled == SER_IER_THRE;
     if (found) {
-        u8 iir = inb(port+SEROFF_IIR) & 0x3f;
-        found = iir == 0x01 || iir == 0x02;
+        u8 iir = inb(port+SEROFF_IIR) & SER_IIR_ID;
+        found = iir == SER_IIR_NONE || iir == SER_IIR_THRE;
     }
 
     // Leave detected ports with UART interrupts disabled, as before.
     // Restore the original interrupt state if detection failed.
     outb(found ? 0x00 : ier, port+SEROFF_IER);
-    if (lcr & 0x80)
-        outb(lcr, port+SEROFF_LCR);
+    serial_restore_lcr(port, lcr);
     if (!found)
         return 0;
     SET_BDA(port_com[count], port);
@@ -97,7 +113,7 @@ handle_1400(struct bregs *regs)
     u16 addr = getComAddr(regs);
     if (!addr)
         return;
-    outb(inb(addr+SEROFF_LCR) | 0x80, addr+SEROFF_LCR);
+    outb(inb(addr+SEROFF_LCR) | SER_LCR_DLAB, addr+SEROFF_LCR);
     if ((regs->al & 0xE0) == 0) {
         outb(0x17, addr+SEROFF_DLL);
         outb(0x04, addr+SEROFF_DLH);
@@ -122,11 +138,17 @@ handle_1401(struct bregs *regs)
     u32 end = irqtimer_calc_ticks(GET_BDA(com_timeout[regs->dx]));
     for (;;) {
         u8 lsr = inb(addr+SEROFF_LSR);
-        if ((lsr & 0x60) == 0x60) {
-            // Success - can write data
+        if ((lsr & (SER_LSR_THRE | SER_LSR_TEMT))
+            == (SER_LSR_THRE | SER_LSR_TEMT)) {
+            int lcr = serial_select_data(addr);
+            if (lcr < 0) {
+                regs->ah = lsr | 0x80;
+                break;
+            }
             outb(regs->al, addr+SEROFF_DATA);
-            // XXX - reread lsr?
-            regs->ah = lsr;
+            serial_restore_lcr(addr, lcr);
+            // INT 14h uses bit 7 for failure, not UART FIFO error status.
+            regs->ah = lsr & 0x7f;
             break;
         }
         if (irqtimer_check(end)) {
@@ -149,10 +171,15 @@ handle_1402(struct bregs *regs)
     u32 end = irqtimer_calc_ticks(GET_BDA(com_timeout[regs->dx]));
     for (;;) {
         u8 lsr = inb(addr+SEROFF_LSR);
-        if (lsr & 0x01) {
-            // Success - can read data
+        if (lsr & SER_LSR_DR) {
+            int lcr = serial_select_data(addr);
+            if (lcr < 0) {
+                regs->ah = lsr | 0x80;
+                break;
+            }
             regs->al = inb(addr+SEROFF_DATA);
-            regs->ah = lsr;
+            serial_restore_lcr(addr, lcr);
+            regs->ah = lsr & 0x7f;
             break;
         }
         if (irqtimer_check(end)) {

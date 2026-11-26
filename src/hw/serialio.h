@@ -22,6 +22,16 @@
 #define SEROFF_LSR     5
 #define SEROFF_MSR     6
 
+// Common 8250-family UART register bits.
+#define SER_LCR_DLAB   0x80
+#define SER_IIR_ID     0x0f
+#define SER_IIR_NONE   0x01
+#define SER_IIR_THRE   0x02
+#define SER_IER_THRE   0x02
+#define SER_LSR_DR     0x01
+#define SER_LSR_THRE   0x20
+#define SER_LSR_TEMT   0x40
+
 void serial_debug_preinit(void);
 void serial_debug_putc(char c);
 void serial_debug_flush(void);
