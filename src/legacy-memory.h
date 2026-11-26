@@ -41,19 +41,22 @@ legacy_contiguous_ram(const struct e820entry *map, int count, u32 base)
 static inline u16
 legacy_88_kib(u32 contiguous)
 {
-    return MIN(contiguous / 1024, 63 * 1024u);
+    u32 kib = contiguous / 1024u;
+    return kib > 63 * 1024u ? 63 * 1024u : kib;
 }
 
 static inline u16
 legacy_e801_low_kib(u32 contiguous)
 {
-    return MIN(contiguous / 1024, 15 * 1024u);
+    u32 kib = contiguous / 1024u;
+    return kib > 15 * 1024u ? 15 * 1024u : kib;
 }
 
 static inline u16
 legacy_e801_high_blocks(u32 contiguous)
 {
-    return MIN(contiguous / 65536, 0xffffu);
+    u32 blocks = contiguous / 65536u;
+    return blocks > 0xffffu ? 0xffffu : blocks;
 }
 
 #endif

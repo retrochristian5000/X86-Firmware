@@ -46,6 +46,20 @@ int main(void)
                                LEGACY_16_MIB) == 0xff000000u);
     CHECK(legacy_e801_high_blocks(0xff000000u) == 65280);
 
+    // Exercise conversion rounding and limits without relying on MIN.
+    CHECK(legacy_88_kib(0) == 0);
+    CHECK(legacy_88_kib(1023) == 0);
+    CHECK(legacy_88_kib(1024) == 1);
+    CHECK(legacy_88_kib(63u * 1024 * 1024 - 1) == 63 * 1024 - 1);
+    CHECK(legacy_88_kib(0xffffffffu) == 63 * 1024);
+    CHECK(legacy_e801_low_kib(0) == 0);
+    CHECK(legacy_e801_low_kib(15u * 1024 * 1024 - 1) == 15 * 1024 - 1);
+    CHECK(legacy_e801_low_kib(0xffffffffu) == 15 * 1024);
+    CHECK(legacy_e801_high_blocks(0) == 0);
+    CHECK(legacy_e801_high_blocks(65535) == 0);
+    CHECK(legacy_e801_high_blocks(65536) == 1);
+    CHECK(legacy_e801_high_blocks(0xffffffffu) == 0xffff);
+
     // Default: unused and ROM blocks read-only; live data writable.
     CHECK(shadow_umb_pam(0xc0000, 0xc6000, 0xe4000, 0xec000,
                          1, 0) == 0x11);
