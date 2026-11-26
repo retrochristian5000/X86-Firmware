@@ -108,6 +108,38 @@ ifneq ($(config-only),y)
 -include $(KCONFIG_CONFIG)
 endif
 
+# Optional size experiments for the 128 KiB BIOS only.  Keep the 16-bit
+# and 32-bit segmented code, VGA BIOS, and compiler ABI unchanged.
+ROM_FLAT_SIZE_PROFILE ?= default
+ROM_FLAT_SIZE_CFLAGS :=
+ifneq ($(config-only),y)
+ifneq ($(ROM_FLAT_SIZE_PROFILE),default)
+ifneq ($(CONFIG_ROM_SIZE),128)
+$(error ROM_FLAT_SIZE_PROFILE requires CONFIG_ROM_SIZE=128)
+endif
+ifneq ($(CONFIG_QEMU),y)
+$(error ROM_FLAT_SIZE_PROFILE requires CONFIG_QEMU=y)
+endif
+ifeq ($(ROM_FLAT_SIZE_PROFILE),switch)
+ROM_FLAT_SIZE_CFLAGS := -fno-jump-tables
+else ifeq ($(ROM_FLAT_SIZE_PROFILE),loops)
+ROM_FLAT_SIZE_CFLAGS := -fno-unroll-loops
+else ifeq ($(ROM_FLAT_SIZE_PROFILE),switch-loops)
+ROM_FLAT_SIZE_CFLAGS := -fno-jump-tables -fno-unroll-loops
+else
+$(error Unknown ROM_FLAT_SIZE_PROFILE: use default, switch, loops, or switch-loops)
+endif
+# Require successful code generation, not just driver acceptance.  Reject
+# unsupported experiments instead of silently reporting baseline results.
+rom-flat-probe := $(shell printf '%s\n' 'int rom_size_probe(int x) { return x + 1; }' | \
+    $(CC) -m32 -march=i386 -ffreestanding -Os -Werror $(ROM_FLAT_SIZE_CFLAGS) \
+    -x c -c - -o /dev/null >/dev/null 2>&1 && printf '%s' yes)
+ifneq ($(rom-flat-probe),yes)
+$(error Compiler cannot generate i386 code with $(ROM_FLAT_SIZE_CFLAGS))
+endif
+endif
+endif
+
 target-y :=
 target-$(CONFIG_QEMU) += $(OUT)bios.bin
 target-$(CONFIG_CSM) += $(OUT)Csm16.bin
@@ -180,7 +212,15 @@ $(OUT)ccode16.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC16)) ; $(ca
 
 $(OUT)code32seg.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC32SEG)) ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
 
-$(OUT)ccode32flat.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT), $(addprefix src/, $(SRC32FLAT)),$@)
+# Track the selected flat compiler flags independently of the linker profile.
+$(OUT)rom-flat-cflags.profile: FORCE
+	$(Q)set -eu; umask 077; mkdir -p "$(OUT)"; tmp=$$(mktemp "$@.XXXXXX"); \
+		trap 'rm -f "$$tmp"' 0; \
+		trap 'exit 1' HUP INT TERM; \
+		printf '%s\n' "$(ROM_FLAT_SIZE_PROFILE)" "$(ROM_FLAT_SIZE_CFLAGS)" > "$$tmp"; \
+		if ! cmp -s "$$tmp" "$@"; then mv "$$tmp" "$@"; fi
+
+$(OUT)ccode32flat.o: $(OUT)autoconf.h $(OUT)rom-flat-cflags.profile $(patsubst %.c, $(OUT)src/%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT) $(ROM_FLAT_SIZE_CFLAGS), $(addprefix src/, $(SRC32FLAT)),$@)
 
 $(OUT)romlayout.o: src/romlayout.S $(OUT)autoconf.h $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
