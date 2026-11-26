@@ -61,14 +61,16 @@ u8 ShiftTSC VARFSEG;
  ****************************************************************/
 
 #define CALIBRATE_COUNT 0x800   // Approx 1.7ms
+#define CALIBRATE_POLL_LIMIT (1U << 20)
 
 // Calibrate the CPU time-stamp-counter
 static void
 tsctimer_setup(void)
 {
-    // Setup "timer2"
+    // Stop channel 2 and mute the speaker while programming the counter.
     u8 orig = inb(PORT_PS2_CTRLB);
-    outb((orig & ~PPCB_SPKR) | PPCB_T2GATE, PORT_PS2_CTRLB);
+    u8 gate_off = orig & ~(PPCB_SPKR | PPCB_T2GATE);
+    outb(gate_off, PORT_PS2_CTRLB);
     /* binary, mode 0, LSB/MSB, Ch 2 */
     outb(PM_SEL_TIMER2|PM_ACCESS_WORD|PM_MODE0|PM_CNT_BINARY, PORT_PIT_MODE);
     /* LSB of ticks */
@@ -76,13 +78,27 @@ tsctimer_setup(void)
     /* MSB of ticks */
     outb(CALIBRATE_COUNT >> 8, PORT_PIT_COUNTER2);
 
+    // Start with a fresh low OUT level and enable counting after sampling TSC.
+    if (inb(PORT_PS2_CTRLB) & PPCB_T2OUT) {
+        outb(orig, PORT_PS2_CTRLB);
+        dprintf(1, "PIT channel 2 did not enter calibration state\n");
+        return;
+    }
     u64 start = rdtscll();
-    while ((inb(PORT_PS2_CTRLB) & PPCB_T2OUT) == 0)
+    outb(gate_off | PPCB_T2GATE, PORT_PS2_CTRLB);
+    u32 polls = CALIBRATE_POLL_LIMIT;
+    while (!(inb(PORT_PS2_CTRLB) & PPCB_T2OUT) && --polls)
         ;
     u64 end = rdtscll();
 
-    // Restore PORT_PS2_CTRLB
+    // Restore PORT_PS2_CTRLB even if calibration failed.
     outb(orig, PORT_PS2_CTRLB);
+
+    // Reject missing transitions and invalid TSC samples before scaling.
+    if (!polls || end <= start || end - start > 0xffffffffULL) {
+        dprintf(1, "PIT/TSC calibration failed; retaining PIT timer\n");
+        return;
+    }
 
     // Store calibrated cpu khz.
     u64 diff = end - start;
@@ -128,8 +144,8 @@ tsctimer_setfreq(u32 khz, const char *src)
 {
     if (!CONFIG_TSC_TIMER)
         return;
-    if (TimerPort != PORT_PIT_COUNTER0)
-        return; // have timer already
+    if (TimerPort != PORT_PIT_COUNTER0 || !khz)
+        return; // have timer already, or no valid frequency
 
     TimerKHz = khz;
     ShiftTSC = 0;
