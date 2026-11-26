@@ -411,11 +411,19 @@ static void pci_bios_init_device(struct pci_device *pci)
     dprintf(1, "PCI: init bdf=%pP id=%04x:%04x\n"
             , pci, pci->vendor, pci->device);
 
+    // Only initialize layouts supported by the resource allocator.
+    u8 header = pci->header_type & 0x7f;
+    if (header != PCI_HEADER_TYPE_NORMAL
+        && header != PCI_HEADER_TYPE_BRIDGE)
+        return;
+
     /* map the interrupt */
     u16 bdf = pci->bdf;
     int pin = pci_config_readb(bdf, PCI_INTERRUPT_PIN);
-    if (pin != 0)
+    if (pin >= 1 && pin <= 4)
         pci_config_writeb(bdf, PCI_INTERRUPT_LINE, pci_slot_get_irq(pci, pin));
+    else if (pin)
+        pci_config_writeb(bdf, PCI_INTERRUPT_LINE, 0xff);
 
     pci_init_device(pci_device_tbl, pci, NULL);
 
@@ -423,7 +431,7 @@ static void pci_bios_init_device(struct pci_device *pci)
     pci_config_maskw(bdf, PCI_COMMAND, 0,
                      PCI_COMMAND_IO | PCI_COMMAND_MEMORY | PCI_COMMAND_SERR);
     /* enable SERR# for forwarding */
-    if (pci->header_type & PCI_HEADER_TYPE_BRIDGE)
+    if (header == PCI_HEADER_TYPE_BRIDGE)
         pci_config_maskw(bdf, PCI_BRIDGE_CONTROL, 0,
                          PCI_BRIDGE_CTL_SERR);
 }
@@ -575,11 +583,14 @@ static u8 pci_find_resource_reserve_capability(u16 bdf)
     }
     u8 cap = 0;
 
-    do {
+    for (int i = 0; i < 48; i++) {
         cap = pci_find_capability(bdf, PCI_CAP_ID_VNDR, cap);
-    } while (cap &&
-             pci_config_readb(bdf, cap + PCI_CAP_REDHAT_TYPE_OFFSET) !=
-                              REDHAT_CAP_RESOURCE_RESERVE);
+        if (!cap || pci_config_readb(bdf, cap + PCI_CAP_REDHAT_TYPE_OFFSET)
+            == REDHAT_CAP_RESOURCE_RESERVE)
+            break;
+        if (i == 47)
+            return 0;
+    }
     if (cap) {
         u8 cap_len = pci_config_readb(bdf, cap + PCI_CAP_FLAGS);
         if (cap_len < RES_RESERVE_CAP_SIZE) {
@@ -608,7 +619,9 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
     /* prevent accidental access to unintended devices */
     foreachbdf(bdf, bus) {
         class = pci_config_readw(bdf, PCI_CLASS_DEVICE);
-        if (class == PCI_CLASS_BRIDGE_PCI) {
+        if (class == PCI_CLASS_BRIDGE_PCI
+            && (pci_config_readb(bdf, PCI_HEADER_TYPE) & 0x7f)
+                == PCI_HEADER_TYPE_BRIDGE) {
             pci_config_writeb(bdf, PCI_SECONDARY_BUS, 255);
             pci_config_writeb(bdf, PCI_SUBORDINATE_BUS, 0);
         }
@@ -616,7 +629,9 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
 
     foreachbdf(bdf, bus) {
         class = pci_config_readw(bdf, PCI_CLASS_DEVICE);
-        if (class != PCI_CLASS_BRIDGE_PCI) {
+        if (class != PCI_CLASS_BRIDGE_PCI
+            || (pci_config_readb(bdf, PCI_HEADER_TYPE) & 0x7f)
+                != PCI_HEADER_TYPE_BRIDGE) {
             continue;
         }
         dprintf(2, "PCI: %s bdf = 0x%x\n", __func__, bdf);
@@ -703,6 +718,8 @@ pci_bios_get_bar(struct pci_device *pci, int bar,
     u16 bdf = pci->bdf;
     u32 old = pci_config_readl(bdf, ofs);
     int is64 = 0, type = PCI_REGION_TYPE_MEM;
+    int lastbar = (pci->header_type & 0x7f) == PCI_HEADER_TYPE_BRIDGE
+        ? PCI_BRIDGE_NUM_REGIONS - 1 : PCI_ROM_SLOT - 1;
     u64 mask;
 
     if (bar == PCI_ROM_SLOT) {
@@ -718,6 +735,13 @@ pci_bios_get_bar(struct pci_device *pci, int bar,
                 type = PCI_REGION_TYPE_PREFMEM;
             is64 = ((old & PCI_BASE_ADDRESS_MEM_TYPE_MASK)
                     == PCI_BASE_ADDRESS_MEM_TYPE_64);
+        }
+        // A 64-bit BAR must have its upper half inside the BAR array.
+        if (is64 && bar == lastbar) {
+            *psize = 0;
+            *pis64 = 0;
+            *ptype = type;
+            return;
         }
         pci_config_writel(bdf, ofs, ~0);
     }
@@ -900,7 +924,9 @@ static int pci_bios_check_devices(struct pci_bus *busses)
     struct pci_device *pci;
     foreachpci(pci) {
         devices++;
-        if (pci->class == PCI_CLASS_BRIDGE_PCI && pci->secondary_bus
+        u8 header = pci->header_type & 0x7f;
+        if (header == PCI_HEADER_TYPE_BRIDGE
+            && pci->class == PCI_CLASS_BRIDGE_PCI && pci->secondary_bus
             && pci->secondary_bus <= MaxPCIBus)
             busses[pci->secondary_bus].bus_dev = pci;
 
@@ -910,10 +936,15 @@ static int pci_bios_check_devices(struct pci_bus *busses)
              * Resources for all root busses go in busses[0]
              */
             bus = &busses[0];
+        // This allocator handles type 0 and type 1 layouts only.
+        // CardBus and unknown headers must not be sized as endpoint BARs.
+        if (header != PCI_HEADER_TYPE_NORMAL
+            && header != PCI_HEADER_TYPE_BRIDGE)
+            continue;
         int i;
         for (i = 0; i < PCI_NUM_REGIONS; i++) {
-            if ((pci->class == PCI_CLASS_BRIDGE_PCI) &&
-                (i >= PCI_BRIDGE_NUM_REGIONS && i < PCI_ROM_SLOT))
+            if (header == PCI_HEADER_TYPE_BRIDGE
+                && i >= PCI_BRIDGE_NUM_REGIONS && i < PCI_ROM_SLOT)
                 continue;
             int type, is64;
             u64 size;

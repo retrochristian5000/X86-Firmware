@@ -172,35 +172,36 @@ pci_enable_mmconfig(u64 addr, const char *name)
 
 u8 pci_find_capability(u16 bdf, u8 cap_id, u8 cap)
 {
-    int i;
     u16 status = pci_config_readw(bdf, PCI_STATUS);
-
     if (!(status & PCI_STATUS_CAP_LIST))
         return 0;
 
-    if (cap == 0) {
-        /* find first */
-        cap = pci_config_readb(bdf, PCI_CAPABILITY_LIST);
-    } else {
-        /* find next */
-        cap = pci_config_readb(bdf, cap + PCI_CAP_LIST_NEXT);
-    }
-    for (i = 0; cap && i <= 0xff; i++) {
-        // A conventional PCI capability starts with two adjacent bytes:
-        // the capability ID and the next pointer. Read the aligned header
-        // in one transaction, preserving byte reads for malformed pointers.
-        if (cap >= 0x40 && !(cap & 3)) {
-            u16 header = pci_config_readw(bdf, cap);
-            if ((u8)header == cap_id)
-                return cap;
-            cap = header >> 8;
-        } else {
-            if (pci_config_readb(bdf, cap + PCI_CAP_LIST_ID) == cap_id)
-                return cap;
-            cap = pci_config_readb(bdf, cap + PCI_CAP_LIST_NEXT);
-        }
+    u8 header = pci_config_readb(bdf, PCI_HEADER_TYPE) & 0x7f;
+    u8 first = PCI_CAPABILITY_LIST;
+    u8 min = 0x40;
+    if (header == PCI_HEADER_TYPE_CARDBUS) {
+        first = PCI_CB_CAPABILITY_LIST;
+        min = 0x48;
+    } else if (header != PCI_HEADER_TYPE_NORMAL
+               && header != PCI_HEADER_TYPE_BRIDGE) {
+        return 0;
     }
 
+    if (cap && (cap < min || (cap & 3)))
+        return 0;
+    u8 pos = pci_config_readb(bdf, cap ? cap + PCI_CAP_LIST_NEXT : first);
+    // Conventional capability headers occupy aligned dwords in 256 bytes.
+    for (int i = 0; i < 48; i++) {
+        pos &= ~3;
+        if (pos < min || pos == cap)
+            return 0;
+        u16 entry = pci_config_readw(bdf, pos);
+        if ((u8)entry == 0xff)
+            return 0;
+        if ((u8)entry == cap_id)
+            return pos;
+        pos = entry >> 8;
+    }
     return 0;
 }
 
