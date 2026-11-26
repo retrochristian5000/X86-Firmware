@@ -35,7 +35,7 @@ def main():
         result = subprocess.run(
             [str(args.qemu.resolve()), "-M", "pc", "-accel", "tcg",
              "-nodefaults", "-vga", "none",
-             "-device", "cirrus-vga,addr=0a",
+             "-device", "cirrus-vga-generic,addr=0a",
              "-bios", str(args.bios.resolve()), "-display", "none",
              "-serial", "none", "-monitor", "none", "-no-reboot",
              "-drive", f"if=floppy,format=raw,readonly=on,file={disk}",
