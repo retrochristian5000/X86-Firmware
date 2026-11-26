@@ -171,30 +171,46 @@ handle_1ab10e(struct bregs *regs)
     }
     struct pir_header *pirtable_g = GLOBALFLAT2GLOBAL(pirtable_gf);
 
-    struct param_s {
+    // PCI BIOS 2.1 uses a 16:16 or 16:32 far pointer according to
+    // the caller's entry mode. The size word is common to both layouts.
+    struct param16_s {
         u16 size;
         u16 buf_off;
         u16 buf_seg;
-    } *param_far = (void*)(regs->di+0);
+    } PACKED;
+    struct param32_s {
+        u16 size;
+        u32 buf_off;
+        u16 buf_seg;
+    } PACKED;
+    u32 param_off = MODE16 ? regs->di : regs->edi;
+    u16 *size_far = (void*)param_off;
 
-    // Validate and update size.
-    u16 bufsize = GET_FARVAR(regs->es, param_far->size);
+    u16 bufsize = GET_FARVAR(regs->es, *size_far);
     u16 pirsize = GET_GLOBAL(pirtable_g->size) - sizeof(struct pir_header);
-    SET_FARVAR(regs->es, param_far->size, pirsize);
+    SET_FARVAR(regs->es, *size_far, pirsize);
     if (bufsize < pirsize) {
         set_code_invalid(regs, RET_BUFFER_TOO_SMALL);
         return;
     }
 
-    // Get dest buffer.
-    void *buf_far = (void*)(GET_FARVAR(regs->es, param_far->buf_off)+0);
-    u16 buf_seg = GET_FARVAR(regs->es, param_far->buf_seg);
+    if (MODE16) {
+        struct param16_s *param = (void*)param_off;
+        void *buf_far = (void*)(u32)GET_FARVAR(regs->es, param->buf_off);
+        u16 buf_seg = GET_FARVAR(regs->es, param->buf_seg);
+        memcpy_far(buf_seg, buf_far, get_global_seg(),
+                   (void*)pirtable_g->slots + get_global_offset(), pirsize);
+    } else {
+        struct param32_s *param = (void*)param_off;
+        u8 *buf_far = (void*)GET_FARVAR(regs->es, param->buf_off);
+        u16 buf_seg = GET_FARVAR(regs->es, param->buf_seg);
+        u8 *slots = (void*)pirtable_g->slots;
 
-    // Memcpy pir table slots to dest buffer.
-    memcpy_far(buf_seg, buf_far
-               , get_global_seg()
-               , (void*)(pirtable_g->slots) + get_global_offset()
-               , pirsize);
+        // memcpy_far uses SI/DI; do not truncate a protected-mode offset.
+        // Both segment selectors remain those provided by the caller.
+        for (u16 i = 0; i < pirsize; i++)
+            SET_FARVAR(buf_seg, buf_far[i], GET_GLOBAL(slots[i]));
+    }
 
     // XXX - bochs bios sets bx to (1 << 9) | (1 << 11)
     regs->bx = GET_GLOBAL(pirtable_g->exclusive_irqs);
