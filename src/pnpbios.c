@@ -82,6 +82,10 @@ handle_pnp(u16 *args)
         if (CONFIG_PNPBIOS_RUNTIME)
             return pnp_set_node(args);
         break;
+    case 0x40:
+        if (CONFIG_PNPBIOS_RUNTIME)
+            return pnp_get_isa_config(args);
+        break;
     case 0x60: return handle_pnp60(args);
     default: break;
     }
@@ -120,7 +124,7 @@ pnp_runtime_setup(void)
 #if CONFIG_PNPBIOS_RUNTIME && !MODESEGMENT
     if (pnp_nodes_setup()) {
         PnpRuntimeHeader = PNPHEADER;
-        dprintf(1, "Experimental PnP BIOS: PCI root node available\n");
+        dprintf(1, "Experimental PnP BIOS: PCI and ISA bus nodes available\n");
     }
 #endif
 }

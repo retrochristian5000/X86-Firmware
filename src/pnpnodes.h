@@ -8,5 +8,6 @@ int pnp_nodes_setup(void);
 u16 pnp_get_node_count(u16 *args);
 u16 pnp_get_node(u16 *args);
 u16 pnp_set_node(u16 *args);
+u16 pnp_get_isa_config(u16 *args);
 
 #endif

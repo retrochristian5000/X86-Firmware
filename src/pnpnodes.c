@@ -15,7 +15,7 @@ u8 PnpNodeCount VARFSEG;
 
 // PNP0A03: PCI bus, type 06h/04h/00h. Fixed, non-disableable.
 // Only conventional PCI configuration I/O is claimed. Do not invent
-// PCI apertures, IRQ assignments, ISA devices or motherboard resources.
+// PCI apertures, IRQ assignments or motherboard resource windows.
 u8 PnpPciNode[] VARFSEG = {
     0x1a, 0x00,       // Node size (26 bytes)
     0x00,             // Handle
@@ -28,6 +28,23 @@ u8 PnpPciNode[] VARFSEG = {
     0x79, 0x00,       // Possible resource end tag
     0x79, 0x00,       // Compatible identifier end tag
 };
+
+// PNP0A00: ISA bus. The PIIX bridge supplies the bus; its child devices
+// own their individual resources. Do not claim the whole ISA I/O space.
+u8 PnpIsaNode[] VARFSEG = {
+    0x12, 0x00,       // Node size (18 bytes)
+    0x01,             // Stable handle
+    0x41, 0xd0, 0x0a, 0x00, // Compressed PNP0A00
+    0x06, 0x01, 0x00, // ISA bridge
+    0x03, 0x00,       // Cannot disable or configure
+    0x79, 0x00,       // Allocated resources
+    0x79, 0x00,       // Possible resources
+    0x79, 0x00,       // Compatible identifiers
+};
+
+// PnP BIOS 1.0A section 4.7.3: revision 1, zero assigned CSNs.
+// No ISA PnP isolation has been performed; the read port is invalid.
+u8 PnpIsaConfig[6] VARFSEG = { 1, 0, 0, 0, 0, 0 };
 #endif
 
 int
@@ -39,7 +56,7 @@ pnp_nodes_setup(void)
     if (!router)
         router = pci_find_device(PCI_VENDOR_ID_INTEL,
                                  PCI_DEVICE_ID_INTEL_82371AB_0);
-    PnpNodeCount = router && router->bdf == pci_to_bdf(0, 1, 0);
+    PnpNodeCount = router && router->bdf == pci_to_bdf(0, 1, 0) ? 2 : 0;
     return PnpNodeCount;
 #else
     return 0;
@@ -72,21 +89,24 @@ pnp_get_node(u16 *args)
 #if CONFIG_PNPBIOS_RUNTIME && MODE16
     // Function, Node (far byte pointer), Buffer (far pointer),
     // Control, BIOS data segment or selector.
-    if (!GET_FARVAR(args[6], PnpNodeCount))
+    u8 count = GET_FARVAR(args[6], PnpNodeCount);
+    if (!count)
         return FUNCTION_NOT_SUPPORTED;
     if (args[5] != 1 && args[5] != 2)
         return PNP_BAD_PARAMETER;
     u8 node = GET_FARVAR(args[2], *(u8 *)(args[1]+0));
-    if (node != 0)
+    if (node >= count)
         return PNP_INVALID_HANDLE;
-    if ((u32)args[3] + sizeof(PnpPciNode) > 0x10000)
+    u8 *data = node ? PnpIsaNode : PnpPciNode;
+    u16 size = node ? sizeof(PnpIsaNode) : sizeof(PnpPciNode);
+    if ((u32)args[3] + size > 0x10000)
         return PNP_BUFFER_TOO_SMALL;
 
     // Use the caller's BIOS data selector in both execution modes.
-    // The firmware node is immutable once POST is complete.
-    memcpy_far(args[4], (void *)(args[3]+0),
-               args[6], PnpPciNode, sizeof(PnpPciNode));
-    SET_FARVAR(args[2], *(u8 *)(args[1]+0), PNP_NODE_END);
+    // The firmware nodes are immutable once POST is complete.
+    memcpy_far(args[4], (void *)(args[3]+0), args[6], data, size);
+    u8 next = node + 1 < count ? node + 1 : PNP_NODE_END;
+    SET_FARVAR(args[2], *(u8 *)(args[1]+0), next);
     return 0;
 #else
     return FUNCTION_NOT_SUPPORTED;
@@ -99,15 +119,34 @@ pnp_set_node(u16 *args)
 #if CONFIG_PNPBIOS_RUNTIME && MODE16
     // Function, Node (by value), Buffer (far pointer), Control,
     // BIOS data segment or selector.
-    if (!GET_FARVAR(args[5], PnpNodeCount))
+    u8 count = GET_FARVAR(args[5], PnpNodeCount);
+    if (!count)
         return FUNCTION_NOT_SUPPORTED;
     if (!args[4] || args[4] > 3)
         return PNP_BAD_PARAMETER;
-    if (args[1] != 0)
+    if (args[1] >= count)
         return PNP_INVALID_HANDLE;
 
-    // The fixed root bus cannot be relocated or disabled.
+    // The fixed buses cannot be relocated or disabled.
     return PNP_SET_FAILED;
+#else
+    return FUNCTION_NOT_SUPPORTED;
+#endif
+}
+
+u16
+pnp_get_isa_config(u16 *args)
+{
+#if CONFIG_PNPBIOS_RUNTIME && MODE16
+    // Function, Configuration (far pointer), BIOS data segment/selector.
+    if (GET_FARVAR(args[3], PnpNodeCount) < 2)
+        return FUNCTION_NOT_SUPPORTED;
+    if ((u32)args[1] + sizeof(PnpIsaConfig) > 0x10000)
+        return PNP_BUFFER_TOO_SMALL;
+
+    memcpy_far(args[2], (void *)(args[1]+0), args[3],
+               PnpIsaConfig, sizeof(PnpIsaConfig));
+    return 0;
 #else
     return FUNCTION_NOT_SUPPORTED;
 #endif
