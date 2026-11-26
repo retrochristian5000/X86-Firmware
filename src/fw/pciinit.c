@@ -900,7 +900,8 @@ static int pci_bios_check_devices(struct pci_bus *busses)
     struct pci_device *pci;
     foreachpci(pci) {
         devices++;
-        if (pci->class == PCI_CLASS_BRIDGE_PCI)
+        if (pci->class == PCI_CLASS_BRIDGE_PCI && pci->secondary_bus
+            && pci->secondary_bus <= MaxPCIBus)
             busses[pci->secondary_bus].bus_dev = pci;
 
         struct pci_bus *bus = &busses[pci_bdf_to_bus(pci->bdf)];
