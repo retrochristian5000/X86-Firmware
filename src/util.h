@@ -173,6 +173,7 @@ int apic_id_is_present(u8 apic_id);
 
 // hw/dma.c
 int dma_floppy(u32 addr, int count, int isWrite);
+void dma_floppy_finish(void);
 void dma_setup(void);
 
 // hw/floppy.c

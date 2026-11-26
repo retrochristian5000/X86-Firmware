@@ -606,6 +606,9 @@ floppy_dma_cmd(struct disk_op_s *op, int count, int command, u8 *param)
     // Invoke floppy controller
     u8 floppyid = GET_GLOBALFLAT(op->drive_fl->cntl_id);
     ret = floppy_drive_pio(floppyid, command, param);
+    // Stop BIOS-owned DMA on both completion and controller failure.
+    // Keep the cascade and all unrelated channel masks untouched.
+    dma_floppy_finish();
     if (ret)
         return ret;
 

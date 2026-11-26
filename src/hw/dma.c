@@ -19,6 +19,13 @@
 #define PORT_DMA2_MODE_REG     0x00d6
 #define PORT_DMA2_MASTER_CLEAR 0x00da
 
+// Mask the floppy DMA channel without disturbing any other channel.
+void
+dma_floppy_finish(void)
+{
+    outb(0x06, PORT_DMA1_MASK_REG);
+}
+
 // Setup the DMA controller for a floppy transfer.
 int
 dma_floppy(u32 addr, int count, int isWrite)
@@ -34,7 +41,7 @@ dma_floppy(u32 addr, int count, int isWrite)
     if (isWrite)
         mode_register = 0x4a;
 
-    outb(0x06, PORT_DMA1_MASK_REG);
+    dma_floppy_finish();
     outb(0x00, PORT_DMA1_CLEAR_FF_REG); // clear flip-flop
     outb(addr, PORT_DMA_ADDR_2);
     outb(addr>>8, PORT_DMA_ADDR_2);
