@@ -101,6 +101,39 @@ class SectionPlacementTests(unittest.TestCase):
         self.assertLessEqual(sections[1].finalloc + sections[1].size, 0xfff00)
 
 
+class VariantLayoutTests(unittest.TestCase):
+    def test_profiles_keep_128k_variants_distinct(self):
+        cfg = {'CONFIG_QEMU': 1, 'CONFIG_ROM_SIZE': 128}
+        for name in ('seabios-128k', 'seabios-microvm'):
+            profile = layoutrom.select_profile(cfg, name, True)
+            self.assertEqual(profile.name, name)
+            self.assertTrue(profile.compact_init_text)
+        with self.assertRaises(ValueError):
+            layoutrom.select_profile(cfg, 'seabios-256k')
+        with self.assertRaises(ValueError):
+            layoutrom.select_profile(cfg, 'unknown')
+
+    def test_compact_init_text_preserves_alignment_and_data_order(self):
+        sections = [
+            StubSection('.text.a', None, None, size=1, align=1),
+            StubSection('.text.b', None, None, size=16, align=16),
+            StubSection('.text.c', None, None, size=1, align=1),
+            StubSection('.rodata.a', None, None, size=1, align=1),
+            StubSection('.data.a', None, None, size=1, align=1),
+        ]
+        original, _ = layoutrom.setSectionsStart(sections, 0x1000)
+        compact, _ = layoutrom.setSectionsStart(
+            sections, 0x1000, compact_init_text=True)
+        self.assertGreater(compact, original)
+        self.assertLess(sections[3].finalloc, sections[4].finalloc)
+        for section in sections:
+            self.assertEqual(section.finalloc % section.align, 0)
+        ordered = sorted(sections, key=lambda s: s.finalloc)
+        for left, right in zip(ordered, ordered[1:]):
+            self.assertLessEqual(left.finalloc + left.size, right.finalloc)
+        self.assertLessEqual(ordered[-1].finalloc + ordered[-1].size, 0x1000)
+
+
 class RomSizeReportTests(unittest.TestCase):
     def test_only_reachable_rom_sections_are_ranked(self):
         sections = [

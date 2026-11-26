@@ -203,15 +203,24 @@ $(OUT)code16.o: $(OUT)ccode16.o $(OUT)romlayout.o
 	@echo "  Linking $@"
 	$(Q)$(LD) $(LD32BIT_FLAG) -r $^ -o $@
 
+# Track placement policy without recompiling unchanged firmware inputs.
+ROM_LAYOUT_VARIANT ?= auto
+ROM_LAYOUT_PACK ?= 0
+$(OUT)romlayout.profile: FORCE
+	$(Q)set -e; umask 077; tmp=$$(mktemp "$@.XXXXXX"); \
+		trap 'rm -f "$$tmp"' EXIT; \
+		printf '%s\n' "$(ROM_LAYOUT_VARIANT)" "$(ROM_LAYOUT_PACK)" > "$$tmp"; \
+		if ! cmp -s "$$tmp" "$@"; then mv "$$tmp" "$@"; fi
+
 # Multi-target pattern rules are grouped by GNU make, including older
 # versions that do not support the explicit &: grouped-target syntax.
 # Each invocation produces all three scripts, even if just one was missing.
-$(OUT)romlayout16.% $(OUT)romlayout32seg.% $(OUT)romlayout32flat.%: $(OUT)code32flat.o $(OUT)code32seg.o $(OUT)code16.o $(OUT)$(KCONFIG_AUTOHEADER) scripts/layoutrom.py
+$(OUT)romlayout16.% $(OUT)romlayout32seg.% $(OUT)romlayout32flat.%: $(OUT)code32flat.o $(OUT)code32seg.o $(OUT)code16.o $(OUT)$(KCONFIG_AUTOHEADER) $(OUT)romlayout.profile scripts/layoutrom.py scripts/layoutprofiles.py
 	@echo "  Building ld scripts"
 	$(Q)$(OBJDUMP) -thr $(OUT)code32flat.o > $(OUT)code32flat.o.objdump
 	$(Q)$(OBJDUMP) -thr $(OUT)code32seg.o > $(OUT)code32seg.o.objdump
 	$(Q)$(OBJDUMP) -thr $(OUT)code16.o > $(OUT)code16.o.objdump
-	$(Q)$(PYTHON) ./scripts/layoutrom.py $(OUT)code16.o.objdump $(OUT)code32seg.o.objdump $(OUT)code32flat.o.objdump $(OUT)$(KCONFIG_AUTOHEADER) $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds
+	$(Q)WHP_ROM_LAYOUT_VARIANT="$(ROM_LAYOUT_VARIANT)" WHP_ROM_LAYOUT_PACK="$(ROM_LAYOUT_PACK)" $(PYTHON) ./scripts/layoutrom.py $(OUT)code16.o.objdump $(OUT)code32seg.o.objdump $(OUT)code32flat.o.objdump $(OUT)$(KCONFIG_AUTOHEADER) $(OUT)romlayout16.lds $(OUT)romlayout32seg.lds $(OUT)romlayout32flat.lds
 
 # Every mode shares cross-mode addresses. Wait for all generated scripts,
 # including recovery of a missing peer, before linking any mode.

@@ -30,6 +30,7 @@ class LinkWorkflowTests(unittest.TestCase):
             (work / 'scripts/buildversion.py').write_text(
                 'import pathlib, sys\n'
                 'pathlib.Path(sys.argv[-1]).touch()\n', encoding='utf-8')
+            (work / 'scripts/layoutprofiles.py').touch()
             (work / 'scripts/layoutrom.py').write_text(
                 'import pathlib, sys\n'
                 'print("LAYOUT")\n'
@@ -52,6 +53,7 @@ class LinkWorkflowTests(unittest.TestCase):
                 'LD = $(PYTHON) tool.py\n'
                 'OBJDUMP = $(PYTHON) tool.py\n'
                 'all: $(OUT)rom.o\n'
+                '.PHONY: FORCE\n'
                 '%.noexec.o: %.o\n'
                 '\tcp $< $@\n'
                 + rules
