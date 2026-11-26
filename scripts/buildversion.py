@@ -102,7 +102,7 @@ def log_tool_versions(tools):
         if not tool:
             continue
         version = check_output("%s --version" % tool).split("\n")[0]
-        print("Build tool: %s: %s" % (tool, version or "version unavailable")))
+        print("Build tool: %s: %s" % (tool, version or "version unavailable"))
 
 
 def main():
