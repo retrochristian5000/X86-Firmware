@@ -574,7 +574,7 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
     int bdf;
     u16 class;
 
-    dprintf(1, "PCI: %s bus = 0x%x\n", __func__, bus);
+    dprintf(2, "PCI: %s bus = 0x%x\n", __func__, bus);
 
     /* prevent accidental access to unintended devices */
     foreachbdf(bdf, bus) {
@@ -590,25 +590,25 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
         if (class != PCI_CLASS_BRIDGE_PCI) {
             continue;
         }
-        dprintf(1, "PCI: %s bdf = 0x%x\n", __func__, bdf);
+        dprintf(2, "PCI: %s bdf = 0x%x\n", __func__, bdf);
 
         u8 pribus = pci_config_readb(bdf, PCI_PRIMARY_BUS);
         if (pribus != bus) {
-            dprintf(1, "PCI: primary bus = 0x%x -> 0x%x\n", pribus, bus);
+            dprintf(2, "PCI: primary bus = 0x%x -> 0x%x\n", pribus, bus);
             pci_config_writeb(bdf, PCI_PRIMARY_BUS, bus);
         } else {
-            dprintf(1, "PCI: primary bus = 0x%x\n", pribus);
+            dprintf(2, "PCI: primary bus = 0x%x\n", pribus);
         }
 
         u8 secbus = pci_config_readb(bdf, PCI_SECONDARY_BUS);
         (*pci_bus)++;
         if (*pci_bus != secbus) {
-            dprintf(1, "PCI: secondary bus = 0x%x -> 0x%x\n",
+            dprintf(2, "PCI: secondary bus = 0x%x -> 0x%x\n",
                     secbus, *pci_bus);
             secbus = *pci_bus;
             pci_config_writeb(bdf, PCI_SECONDARY_BUS, secbus);
         } else {
-            dprintf(1, "PCI: secondary bus = 0x%x\n", secbus);
+            dprintf(2, "PCI: secondary bus = 0x%x\n", secbus);
         }
 
         /* set to max for access to all subordinate buses.
@@ -640,12 +640,12 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
                     }
                 }
             }
-            dprintf(1, "PCI: subordinate bus = 0x%x -> 0x%x\n",
+            dprintf(2, "PCI: subordinate bus = 0x%x -> 0x%x\n",
                     subbus, res_bus);
             subbus = res_bus;
             *pci_bus = res_bus;
         } else {
-            dprintf(1, "PCI: subordinate bus = 0x%x\n", subbus);
+            dprintf(2, "PCI: subordinate bus = 0x%x\n", subbus);
         }
         pci_config_writeb(bdf, PCI_SUBORDINATE_BUS, subbus);
     }
@@ -984,7 +984,7 @@ static int pci_bios_check_devices(struct pci_bus *busses)
             if (align > sum && hotplug_support && !resource_optional)
                 sum = align; /* reserve min size for hot-plug */
             if (size > sum) {
-                dprintf(1, "PCI: QEMU resource reserve cap: "
+                dprintf(2, "PCI: QEMU resource reserve cap: "
                         "size %08llx type %s\n",
                         size, region_type_name[type]);
                 if (type != PCI_REGION_TYPE_IO) {
@@ -998,7 +998,7 @@ static int pci_bios_check_devices(struct pci_bus *busses)
                 parent, s->bus_dev, -1, size, align, type, is64);
             if (!entry)
                 return -1;
-            dprintf(1, "PCI: secondary bus %d size %08llx type %s\n",
+            dprintf(2, "PCI: secondary bus %d size %08llx type %s\n",
                       entry->dev->secondary_bus, size,
                       region_type_name[entry->type]);
         }
