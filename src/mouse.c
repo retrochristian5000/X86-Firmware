@@ -94,6 +94,7 @@ mouse_15c201(struct bregs *regs)
         set_code_invalid(regs, RET_ENEEDRESEND);
         return;
     }
+    SET_EBDA(get_ebda_seg(), mouse_flag1, 0);
     regs->bl = param[0];
     regs->bh = param[1];
     set_code_success(regs);
@@ -141,7 +142,7 @@ mouse_15c203(struct bregs *regs)
 static void
 mouse_15c204(struct bregs *regs)
 {
-    u8 param[2];
+    u8 param[1];
     int ret = mouse_command(PSMOUSE_CMD_GETID, param);
     if (ret) {
         set_code_invalid(regs, RET_ENEEDRESEND);
@@ -240,6 +241,7 @@ mouse_15c207(struct bregs *regs)
         /* install handler */
         mouse_flags_2 |= 0x80;
     }
+    SET_EBDA(ebda_seg, mouse_flag1, 0);
     SET_EBDA(ebda_seg, mouse_flag2, mouse_flags_2);
     SET_EBDA(ebda_seg, far_call_pointer, farptr);
     set_code_success(regs);
@@ -329,6 +331,16 @@ process_mouse(u8 data)
 
     u8 package_count = mouse_flags_2 & 0x07;
     u8 index = mouse_flags_1 & 0x07;
+    // Only the standard three-byte packet format is supported.
+    if (package_count != 3) {
+        SET_EBDA(ebda_seg, mouse_flag1, 0);
+        return;
+    }
+    if (index >= package_count) {
+        index = 0;
+        mouse_flags_1 = 0;
+        SET_EBDA(ebda_seg, mouse_flag1, 0);
+    }
     SET_EBDA(ebda_seg, mouse_data[index], data);
 
     if ((index+1) < package_count) {
