@@ -64,7 +64,8 @@ await_not_bsy(u16 base)
 static int
 await_rdy(u16 base)
 {
-    return await_ide(ATA_CB_STAT_RDY, ATA_CB_STAT_RDY, base, IDE_TIMEOUT);
+    return await_ide(ATA_CB_STAT_BSY | ATA_CB_STAT_RDY,
+                     ATA_CB_STAT_RDY, base, IDE_TIMEOUT);
 }
 
 // Wait for ide state - pauses for one ata cycle first.
@@ -85,8 +86,8 @@ ndelay_await_not_bsy(u16 iobase1)
     return await_not_bsy(iobase1);
 }
 
-// Reset a drive
-static void
+// Reset a drive and report the result to INT 13h.
+static int
 ata_reset(struct atadrive_s *adrive_gf)
 {
     struct ata_channel_s *chan_gf = GET_GLOBALFLAT(adrive_gf->chan_gf);
@@ -118,12 +119,16 @@ ata_reset(struct atadrive_s *adrive_gf)
             // Change drive request failed to take effect - retry.
             if (timer_check(end)) {
                 warn_timeout();
+                status = -1;
                 goto done;
             }
         }
     } else {
         // QEMU doesn't reset dh on reset, so set it explicitly.
         outb(ATA_CB_DH_DEV0, iobase1 + ATA_CB_DH);
+        status = ndelay_await_not_bsy(iobase1);
+        if (status < 0)
+            goto done;
     }
 
     // On a user-reset request, wait for RDY if it is an ATA device.
@@ -136,17 +141,31 @@ done:
     outb(ATA_CB_DC_HD15, iobase2+ATA_CB_DC);
 
     dprintf(6, "ata_reset exit status=%x\n", status);
+    if (status < 0)
+        return DISK_RET_ETIMEOUT;
+    if (status & ATA_CB_STAT_DF)
+        return DISK_RET_ECONTROLLER;
+    return DISK_RET_SUCCESS;
 }
 
 // Check for drive RDY for 16bit interface command.
 static int
 isready(struct atadrive_s *adrive_gf)
 {
-    // Read the status from controller
     struct ata_channel_s *chan_gf = GET_GLOBALFLAT(adrive_gf->chan_gf);
     u16 iobase1 = GET_GLOBALFLAT(chan_gf->iobase1);
-    u8 status = inb(iobase1 + ATA_CB_STAT);
-    if ((status & (ATA_CB_STAT_BSY|ATA_CB_STAT_RDY)) == ATA_CB_STAT_RDY)
+    u16 iobase2 = GET_GLOBALFLAT(chan_gf->iobase2);
+    u8 status = inb(iobase2 + ATA_CB_ASTAT);
+    if (status & (ATA_CB_STAT_BSY | ATA_CB_STAT_DRQ))
+        return DISK_RET_ENOTREADY;
+
+    // Status belongs to the selected device, not necessarily BIOS drive DL.
+    u8 slave = GET_GLOBALFLAT(adrive_gf->slave);
+    outb(slave ? ATA_CB_DH_DEV1 : ATA_CB_DH_DEV0, iobase1 + ATA_CB_DH);
+    ndelay(400);
+    status = inb(iobase2 + ATA_CB_ASTAT);
+    if ((status & (ATA_CB_STAT_BSY | ATA_CB_STAT_RDY | ATA_CB_STAT_DF
+                   | ATA_CB_STAT_DRQ)) == ATA_CB_STAT_RDY)
         return DISK_RET_SUCCESS;
     return DISK_RET_ENOTREADY;
 }
@@ -590,8 +609,7 @@ ata_process_op(struct disk_op_s *op)
     case CMD_WRITE:
         return ata_readwrite(op, 1);
     case CMD_RESET:
-        ata_reset(adrive_gf);
-        return DISK_RET_SUCCESS;
+        return ata_reset(adrive_gf);
     case CMD_ISREADY:
         return isready(adrive_gf);
     default:
@@ -967,7 +985,8 @@ ata_detect(void *data)
 
         // reset the channel
         if (!didreset) {
-            ata_reset(&dummy);
+            if (ata_reset(&dummy))
+                continue;
             didreset = 1;
         }
 
