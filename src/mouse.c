@@ -160,12 +160,12 @@ mouse_15c205(struct bregs *regs)
         set_code_invalid(regs, RET_EINTERFACE);
         return;
     }
-    u16 ebda_seg = get_ebda_seg();
-    SET_EBDA(ebda_seg, mouse_flag1, 0x00);
-    SET_EBDA(ebda_seg, mouse_flag2, regs->bh);
-
-    // Reset Mouse
+    // Do not change the BIOS packet configuration if reset fails.
     mouse_15c201(regs);
+    if (!(regs->flags & F_CF)) {
+        u16 ebda_seg = get_ebda_seg();
+        SET_EBDA(ebda_seg, mouse_flag2, 3);
+    }
 }
 
 // Return Status
