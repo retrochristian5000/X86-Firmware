@@ -15,6 +15,8 @@ struct acpi_20_generic_address {
 } PACKED;
 
 #define RSDP_SIGNATURE 0x2052545020445352LL // "RSD PTR "
+#define ACPI_RSDP_V1_SIZE 20
+#define ACPI_RSDP_V2_SIZE 36
 
 struct rsdp_descriptor {        /* Root System Descriptor Pointer */
     u64 signature;              /* ACPI signature, contains "RSD PTR " */
@@ -22,7 +24,7 @@ struct rsdp_descriptor {        /* Root System Descriptor Pointer */
     u8  oem_id [6];             /* OEM identification */
     u8  revision;               /* Must be 0 for 1.0, 2 for 2.0 */
     u32 rsdt_physical_address;  /* 32-bit physical address of RSDT */
-    u32 length;                 /* XSDT Length in bytes including hdr */
+    u32 length;                 /* Total RSDP length, including extension */
     u64 xsdt_physical_address;  /* 64-bit physical address of XSDT */
     u8  extended_checksum;      /* Checksum of entire table */
     u8  reserved [3];           /* Reserved field must be 0 */

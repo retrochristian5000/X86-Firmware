@@ -91,18 +91,16 @@ static int
 get_acpi_rsdp_length(void *pos, unsigned size)
 {
     struct rsdp_descriptor *p = pos;
-    if (p->signature != RSDP_SIGNATURE)
+    u32 length = ACPI_RSDP_V1_SIZE;
+    if (size < length || p->signature != RSDP_SIGNATURE
+        || checksum(pos, length))
         return -1;
-    u32 length = 20;
-    if (length > size)
-        return -1;
-    if (checksum(pos, length) != 0)
-        return -1;
-    if (p->revision > 1) {
-        length = p->length;
-        if (length > size)
+    if (p->revision >= 2) {
+        if (size < ACPI_RSDP_V2_SIZE)
             return -1;
-        if (checksum(pos, length) != 0)
+        length = p->length;
+        if (length < ACPI_RSDP_V2_SIZE || length > size
+            || length > 0x7fffffff || checksum(pos, length))
             return -1;
     }
     return length;
@@ -115,7 +113,8 @@ copy_acpi_rsdp(void *pos)
 {
     if (RsdpAddr)
         return;
-    int length = get_acpi_rsdp_length(pos, -1);
+    // The legacy copy interface has no source size. Copy known layouts only.
+    int length = get_acpi_rsdp_length(pos, ACPI_RSDP_V2_SIZE);
     if (length < 0)
         return;
     RsdpAddr = copy_fseg_table("ACPI RSDP", pos, length);
@@ -134,58 +133,84 @@ void *find_acpi_rsdp(void)
     return NULL;
 }
 
+// Validate the common header before following or interpreting table fields.
+static struct acpi_table_header *
+acpi_table_at(u32 addr, u32 signature)
+{
+    if (!addr || addr > (u32)-1 - sizeof(struct acpi_table_header))
+        return NULL;
+    struct acpi_table_header *tbl = (void*)addr;
+    if (tbl->signature != signature || tbl->length < sizeof(*tbl)
+        || tbl->length > (u32)-1 - addr || checksum(tbl, tbl->length))
+        return NULL;
+    return tbl;
+}
+
 void *
 find_acpi_table(u32 signature)
 {
-    dprintf(4, "rsdp=%p\n", RsdpAddr);
     if (!RsdpAddr || RsdpAddr->signature != RSDP_SIGNATURE)
         return NULL;
-    struct rsdt_descriptor_rev1 *rsdt = (void*)RsdpAddr->rsdt_physical_address;
-    struct xsdt_descriptor_rev2 *xsdt =
-        RsdpAddr->xsdt_physical_address >= 0x100000000
-        ? NULL : (void*)(u32)(RsdpAddr->xsdt_physical_address);
-    dprintf(4, "rsdt=%p\n", rsdt);
-    dprintf(4, "xsdt=%p\n", xsdt);
 
-    if (xsdt && xsdt->signature == XSDT_SIGNATURE) {
-        void *end = (void*)xsdt + xsdt->length;
-        int i;
-        for (i=0; (void*)&xsdt->table_offset_entry[i] < end; i++) {
-            if (xsdt->table_offset_entry[i] >= 0x100000000)
-                continue; /* above 4G */
-            struct acpi_table_header *tbl = (void*)(u32)xsdt->table_offset_entry[i];
-            if (!tbl || tbl->signature != signature)
-                continue;
-            dprintf(1, "table(%x)=%p (via xsdt)\n", signature, tbl);
-            return tbl;
+    // ACPI 1.0 RSDPs end at the RSDT address; do not read extended fields.
+    if (RsdpAddr->revision >= 2
+        && RsdpAddr->length >= ACPI_RSDP_V2_SIZE
+        && RsdpAddr->xsdt_physical_address < 0x100000000ULL) {
+        struct xsdt_descriptor_rev2 *xsdt = (void*)acpi_table_at(
+            RsdpAddr->xsdt_physical_address, XSDT_SIGNATURE);
+        if (xsdt && !((xsdt->length - sizeof(*xsdt)) % sizeof(u64))) {
+            unsigned count = (xsdt->length - sizeof(*xsdt)) / sizeof(u64);
+            for (unsigned i = 0; i < count; i++) {
+                u64 addr = xsdt->table_offset_entry[i];
+                if (addr >= 0x100000000ULL)
+                    continue;
+                struct acpi_table_header *tbl = acpi_table_at(addr, signature);
+                if (tbl)
+                    return tbl;
+            }
         }
     }
 
-    if (rsdt && rsdt->signature == RSDT_SIGNATURE) {
-        void *end = (void*)rsdt + rsdt->length;
-        int i;
-        for (i=0; (void*)&rsdt->table_offset_entry[i] < end; i++) {
-            struct acpi_table_header *tbl = (void*)rsdt->table_offset_entry[i];
-            if (!tbl || tbl->signature != signature)
-                continue;
-            dprintf(1, "table(%x)=%p (via rsdt)\n", signature, tbl);
-            return tbl;
+    // Preserve the original ACPI 1.0 lookup and fallback for legacy OSes.
+    struct rsdt_descriptor_rev1 *rsdt = (void*)acpi_table_at(
+        RsdpAddr->rsdt_physical_address, RSDT_SIGNATURE);
+    if (rsdt && !((rsdt->length - sizeof(*rsdt)) % sizeof(u32))) {
+        unsigned count = (rsdt->length - sizeof(*rsdt)) / sizeof(u32);
+        for (unsigned i = 0; i < count; i++) {
+            struct acpi_table_header *tbl = acpi_table_at(
+                rsdt->table_offset_entry[i], signature);
+            if (tbl)
+                return tbl;
         }
     }
-
-    dprintf(4, "no table %x found\n", signature);
     return NULL;
+}
+
+static struct fadt_descriptor_rev1 *
+find_acpi_fadt(void)
+{
+    struct fadt_descriptor_rev1 *fadt = find_acpi_table(FACP_SIGNATURE);
+    return fadt && fadt->length >= sizeof(*fadt) ? fadt : NULL;
+}
+
+void *
+find_acpi_dsdt(void)
+{
+    struct fadt_descriptor_rev1 *fadt = find_acpi_fadt();
+    return fadt ? acpi_table_at(fadt->dsdt, DSDT_SIGNATURE) : NULL;
 }
 
 u32
 find_resume_vector(void)
 {
-    struct fadt_descriptor_rev1 *fadt = find_acpi_table(FACP_SIGNATURE);
-    if (!fadt)
+    struct fadt_descriptor_rev1 *fadt = find_acpi_fadt();
+    if (!fadt || !fadt->firmware_ctrl
+        || fadt->firmware_ctrl > (u32)-1 - sizeof(struct facs_descriptor_rev1))
         return 0;
     struct facs_descriptor_rev1 *facs = (void*)fadt->firmware_ctrl;
     dprintf(4, "facs=%p\n", facs);
-    if (! facs || facs->signature != FACS_SIGNATURE)
+    // FACS is a mutable control structure and has no ACPI table checksum.
+    if (facs->signature != FACS_SIGNATURE || facs->length < sizeof(*facs))
         return 0;
     // Found it.
     dprintf(4, "resume addr=%d\n", facs->firmware_waking_vector);
@@ -238,16 +263,19 @@ acpi_set_reset_reg(struct acpi_20_generic_address *reg, u8 val)
 void
 find_acpi_features(void)
 {
-    struct fadt_descriptor_rev1 *fadt = find_acpi_table(FACP_SIGNATURE);
+    struct fadt_descriptor_rev1 *fadt = find_acpi_fadt();
     if (!fadt)
         return;
     u32 pm_tmr = le32_to_cpu(fadt->pm_tmr_blk);
     u32 pm1a_cnt = le32_to_cpu(fadt->pm1a_cnt_blk);
     dprintf(4, "pm_tmr_blk=%x\n", pm_tmr);
-    if (pm_tmr)
-        pmtimer_setup(pm_tmr);
-    if (pm1a_cnt)
-        acpi_pm1a_cnt = pm1a_cnt;
+    // Legacy fixed registers are system I/O, not truncated memory addresses.
+    if (!(fadt->flags & ACPI_FADT_F_HW_REDUCED_ACPI)) {
+        if (pm_tmr && pm_tmr <= 0xfffc && fadt->pm_tmr_len == 4)
+            pmtimer_setup(pm_tmr);
+        if (pm1a_cnt && pm1a_cnt <= 0xfffe && fadt->pm1_cnt_len >= 2)
+            acpi_pm1a_cnt = pm1a_cnt;
+    }
 
     // Theoretically we should check the 'reset_reg_sup' flag, but Windows
     // doesn't and thus nobody seems to *set* it. If the table is large enough

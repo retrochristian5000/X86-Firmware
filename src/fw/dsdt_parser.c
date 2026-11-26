@@ -640,15 +640,12 @@ void acpi_dsdt_parse(void)
     if (!CONFIG_ACPI_PARSE)
         return;
 
-    struct fadt_descriptor_rev1 *fadt = find_acpi_table(FACP_SIGNATURE);
-    if (!fadt)
+    struct acpi_table_header *table = find_acpi_dsdt();
+    if (!table)
         return;
-    u8 *dsdt = (void*)(fadt->dsdt);
-    if (!dsdt)
-        return;
-
-    u32 length = *(u32*)(dsdt + 4);
-    u32 offset = 0x24;
+    u8 *dsdt = (void*)table;
+    u32 length = table->length;
+    u32 offset = sizeof(*table);
     dprintf(1, "ACPI: parse DSDT at %p (len %d)\n", dsdt, length);
 
     struct parse_state s;
