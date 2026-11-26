@@ -82,7 +82,7 @@ handle_1a00(struct bregs *regs)
 static void
 handle_1a01(struct bregs *regs)
 {
-    u32 ticks = (regs->cx << 16) | regs->dx;
+    u32 ticks = ((u32)regs->cx << 16) | regs->dx;
     SET_BDA(timer_counter, ticks);
     SET_BDA(timer_rollover, 0); // reset flag
     // XXX - should use set_code_success()?
@@ -398,8 +398,8 @@ handle_1586(struct bregs *regs)
         return;
     }
     // Use the rtc to wait for the specified time.
-    u8 statusflag = 0;
-    u32 count = (regs->cx << 16) | regs->dx;
+    volatile u8 statusflag = 0;
+    u32 count = ((u32)regs->cx << 16) | regs->dx;
     int ret = set_usertimer(count, GET_SEG(SS), (u32)&statusflag);
     if (ret) {
         set_code_invalid(regs, RET_ECLOCKINUSE);
@@ -414,7 +414,8 @@ handle_1586(struct bregs *regs)
 static void
 handle_158300(struct bregs *regs)
 {
-    int ret = set_usertimer((regs->cx << 16) | regs->dx, regs->es, regs->bx);
+    int ret = set_usertimer(((u32)regs->cx << 16) | regs->dx,
+                            regs->es, regs->bx);
     if (ret)
         // Interval already set.
         set_code_invalid(regs, RET_EUNSUPPORTED);
@@ -467,26 +468,26 @@ handle_70(void)
 
     if (!(registerB & (RTC_B_PIE|RTC_B_AIE)))
         goto done;
-    if (registerC & RTC_B_AIE) {
+    if (registerB & registerC & RTC_B_AIE) {
         // Handle Alarm Interrupt.
         struct bregs br;
         memset(&br, 0, sizeof(br));
         br.flags = F_IF;
         call16_int(0x4a, &br);
     }
-    if (!(registerC & RTC_B_PIE))
+    if (!(registerB & registerC & RTC_B_PIE))
         goto done;
 
     // Handle Periodic Interrupt.
 
     check_preempt();
 
-    if (!GET_BDA(rtc_wait_flag))
+    if (!(GET_BDA(rtc_wait_flag) & RWS_WAIT_PENDING))
         goto done;
 
     // Wait Interval (Int 15, AH=83) active.
     u32 time = GET_BDA(user_wait_timeout);  // Time left in microseconds.
-    if (time < USEC_PER_RTC) {
+    if (time <= USEC_PER_RTC) {
         // Done waiting - write to specified flag byte.
         struct segoff_s segoff = GET_BDA(user_wait_complete_flag);
         u16 ptr_seg = segoff.seg;
