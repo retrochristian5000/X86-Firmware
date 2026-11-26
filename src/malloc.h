@@ -12,7 +12,7 @@ int rom_confirm(u32 size);
 void malloc_csm_preinit(u32 low_pmm, u32 low_pmm_size, u32 hi_pmm,
                         u32 hi_pmm_size);
 void malloc_preinit(void);
-extern u32 LegacyRamSize;
+extern u32 LegacyExtendedRam, LegacyRamAbove16M;
 void malloc_init(void);
 void malloc_prepboot(void);
 void malloc_report_memory(void);

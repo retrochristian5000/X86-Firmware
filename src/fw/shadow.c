@@ -14,6 +14,7 @@
 #include "malloc.h" // rom_get_last
 #include "output.h" // dprintf
 #include "paravirt.h" // runningOnXen
+#include "shadow-umb.h" // shadow_umb_pam
 #include "string.h" // memset
 #include "util.h" // make_bios_writable
 #include "x86.h" // wbinvd
@@ -86,22 +87,17 @@ make_bios_readonly_intel(u16 bdf, u32 pam0)
     pamdata.data32[1] = pci_config_readl(bdf, ALIGN_DOWN(pam0, 4) + 4);
     u8 *pam = &pamdata.data8[pam0 & 0x03];
 
-    // Write protect roms from 0xc0000-0xf0000
-    u32 romlast = BUILD_BIOS_ADDR, rommax = BUILD_BIOS_ADDR;
-    if (CONFIG_WRITABLE_UPPERMEMORY)
-        romlast = rom_get_last();
-    if (CONFIG_MALLOC_UPPERMEMORY)
-        rommax = rom_get_max();
+    // Classify every 16 KiB block, including the final partial
+    // ROM/runtime boundary. A larger BIOS may contain code below F0000h.
+    u32 romlast = rom_get_last();
+    u32 readonly_start = SYMBOL(final_readonly_start);
+    u32 runtime_start = rom_get_max();
     int i;
-    for (i=0; i<6; i++) {
-        u32 mem = BUILD_ROM_START + i * 32*1024;
-        // romlast is the exclusive end of the deployed option ROMs.
-        if (romlast <= mem + 16*1024 || rommax < mem + 32*1024) {
-            if (romlast > mem && rommax >= mem + 16*1024)
-                pam[i + 1] = 0x31;
-            break;
-        }
-        pam[i + 1] = 0x11;
+    for (i = 0; i < 6; i++) {
+        u32 mem = BUILD_ROM_START + i * 2 * SHADOW_UMB_BLOCK;
+        pam[i + 1] = shadow_umb_pam(mem, romlast, runtime_start,
+                                   readonly_start, CONFIG_MALLOC_UPPERMEMORY,
+                                   CONFIG_WRITABLE_UPPERMEMORY);
     }
 
     // Write protect 0xf0000-0x100000

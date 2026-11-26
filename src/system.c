@@ -9,7 +9,8 @@
 #include "bregs.h" // struct bregs
 #include "e820map.h" // E820_RAM
 #include "hw/pic.h" // pic_reset
-#include "malloc.h" // LegacyRamSize
+#include "legacy-memory.h" // legacy_88_kib
+#include "malloc.h" // LegacyExtendedRam
 #include "output.h" // debug_enter
 #include "string.h" // memcpy_far
 #include "util.h" // handle_1553
@@ -196,14 +197,8 @@ handle_1587(struct bregs *regs)
 static void
 handle_1588(struct bregs *regs)
 {
-    u32 rs = GET_GLOBAL(LegacyRamSize);
-
-    // According to Ralf Brown's interrupt the limit should be 15M,
-    // but real machines mostly return max. 63M.
-    if (rs > 64*1024*1024)
-        regs->ax = 63 * 1024;
-    else
-        regs->ax = (rs - 1*1024*1024) / 1024;
+    // Preserve the historical 63 MiB ceiling, but never span a hole.
+    regs->ax = legacy_88_kib(GET_GLOBAL(LegacyExtendedRam));
     set_success(regs);
 }
 
@@ -293,18 +288,10 @@ handle_15e801(struct bregs *regs)
     // regs.u.r16.ax = 0;
     // regs.u.r16.bx = 0;
 
-    u32 rs = GET_GLOBAL(LegacyRamSize);
-
-    // Get the amount of extended memory (above 1M)
-    if (rs > 16*1024*1024) {
-        // limit to 15M
-        regs->cx = 15*1024;
-        // Get the amount of extended memory above 16M in 64k blocks
-        regs->dx = (rs - 16*1024*1024) / (64*1024);
-    } else {
-        regs->cx = (rs - 1*1024*1024) / 1024;
-        regs->dx = 0;
-    }
+    // E801 describes two independent ranges, including the case of
+    // a 15-16 MiB ISA hole. Neither range may cross a reserved region.
+    regs->cx = legacy_e801_low_kib(GET_GLOBAL(LegacyExtendedRam));
+    regs->dx = legacy_e801_high_blocks(GET_GLOBAL(LegacyRamAbove16M));
 
     // Set configured memory equal to extended memory
     regs->ax = regs->cx;

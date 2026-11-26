@@ -476,8 +476,10 @@ menu "BIOS interfaces"
         help
             When selected, the "Upper Memory Block" area
             (0xc0000-0xeffff) that is not occupied by option ROMs can be
-            made writable at chipset shadow-memory granularity.  SeaBIOS
-            runtime allocations remain writable regardless of this option.
+            made writable in wholly unused 16 KiB shadow-memory blocks.
+            SeaBIOS runtime allocations remain writable regardless of
+            this option, and firmware code is protected where the chipset
+            granularity permits. This does not provide an EMS manager.
             Some older DOS memory managers require unused UMB regions to
             be read-only during their memory scan.
 

@@ -7,6 +7,7 @@
 #include "biosvar.h" // GET_BDA
 #include "config.h" // BUILD_BIOS_ADDR
 #include "e820map.h" // struct e820entry
+#include "legacy-memory.h" // legacy_contiguous_ram
 #include "list.h" // hlist_node
 #include "malloc.h" // _malloc
 #include "memmap.h" // PAGE_SIZE
@@ -470,24 +471,17 @@ malloc_csm_preinit(u32 low_pmm, u32 low_pmm_size, u32 hi_pmm, u32 hi_pmm_size)
     alloc_add(&ZoneTmpLow, low_pmm, low_pmm + low_pmm_size);
 }
 
-u32 LegacyRamSize VARFSEG;
+// Legacy calls cannot describe arbitrary holes in the E820 map.
+u32 LegacyExtendedRam VARFSEG;
+u32 LegacyRamAbove16M VARFSEG;
 
-// Calculate the maximum ramsize (less than 4gig) from e820 map.
 static void
 calcRamSize(void)
 {
-    u32 rs = 0;
-    int i;
-    for (i=e820_count-1; i>=0; i--) {
-        struct e820entry *en = &e820_list[i];
-        u64 end = en->start + en->size;
-        u32 type = en->type;
-        if (end <= 0xffffffff && (type == E820_ACPI || type == E820_RAM)) {
-            rs = end;
-            break;
-        }
-    }
-    LegacyRamSize = rs >= 1024*1024 ? rs : 1024*1024;
+    LegacyExtendedRam = legacy_contiguous_ram(e820_list, e820_count,
+                                               LEGACY_ONE_MIB);
+    LegacyRamAbove16M = legacy_contiguous_ram(e820_list, e820_count,
+                                              LEGACY_16_MIB);
 }
 
 // Update pointers after code relocation.
