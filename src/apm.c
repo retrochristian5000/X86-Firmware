@@ -145,7 +145,7 @@ apm_all_devices(u16 device)
 static void
 handle_155307(struct bregs *regs)
 {
-    if (!apm_all_devices(regs->bx)) {
+    if (regs->bx != 1) {
         set_code_invalid_silent(regs, 0x09);
         return;
     }
@@ -236,7 +236,7 @@ handle_15530e(struct bregs *regs)
         set_code_invalid_silent(regs, 0x09);
         return;
     }
-    // Negotiate no higher than the driver's requested version.
+    // Return a version in the supported APM 1.0-1.2 range.
     // The negotiated version is not yet persisted across entry modes.
     regs->ax = regs->cx < 0x0102 ? regs->cx : 0x0102;
     if (regs->ax < 0x0100)
