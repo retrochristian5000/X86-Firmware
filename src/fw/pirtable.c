@@ -14,6 +14,7 @@
 #include "std/pirtable.h" // struct pir_header
 #include "string.h" // checksum
 #include "romfile.h" // romfile_loadint
+#include "isa-irq.h" // piix_pirq_options
 #include "util.h" // PirAddr
 
 // QEMU i440fx has 32 root-bus device numbers; slot zero is the host
@@ -21,7 +22,6 @@
 // occupied root-bus slots without reserving F-segment space for empty ones.
 #define PIR_ROOT_SLOTS 31
 #define PIR_LEGACY_SLOTS 6
-#define PIIX_PIRQ_BITMAP 0xdef8
 
 struct pir_table {
     struct pir_header pir;
@@ -78,8 +78,9 @@ pirtable_setup(void)
             occupied |= 1U << pci_bdf_to_dev(pci->bdf);
     }
 
-    u16 irq_bitmap = PIIX_PIRQ_BITMAP
-                     & ~(u16)romfile_loadint("etc/isa-ne2000-irq-mask", 0);
+    u64 reported = romfile_loadint(ISA_IRQ_MASK_FILE, ISA_IRQ_MASK_MISSING);
+    u16 legacy = romfile_loadint(ISA_IRQ_LEGACY_FILE, 0);
+    u16 irq_bitmap = piix_pirq_options(reported, legacy);
     for (int dev = 1; dev <= PIR_ROOT_SLOTS; dev++) {
         if (dev <= PIR_LEGACY_SLOTS || (occupied & (1U << dev)))
             pir_add_slot(&table, dev, irq_bitmap);

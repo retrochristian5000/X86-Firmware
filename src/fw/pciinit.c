@@ -21,6 +21,7 @@
 #include "output.h" // dprintf
 #include "paravirt.h" // RamSize
 #include "romfile.h" // romfile_loadint
+#include "isa-irq.h" // piix_reserved_irqs
 #include "string.h" // memset
 #include "util.h" // pci_setup
 #include "x86.h" // outb
@@ -488,18 +489,13 @@ static void i440fx_mem_addr_setup(struct pci_device *dev, void *arg)
     else if (RamSize <= 0xc0000000)
         pcimem_start = 0xc0000000;
 
-    u16 reserved = romfile_loadint("etc/isa-ne2000-irq-mask", 0);
-    for (int i = 0; i < 4; i++) {
-        u8 irq = pci_irqs[i];
-        if (reserved & (1U << irq)) {
-            irq = irq == 10 ? 11 : 10;
-            if (reserved & (1U << irq))
-                irq = 0x80;
-        }
-        piix_pci_irqs[i] = irq;
-    }
+    u64 reported = romfile_loadint(ISA_IRQ_MASK_FILE, ISA_IRQ_MASK_MISSING);
+    u16 legacy = romfile_loadint(ISA_IRQ_LEGACY_FILE, 0);
+    u16 reserved = piix_reserved_irqs(reported, legacy);
+    for (int i = 0; i < 4; i++)
+        piix_pci_irqs[i] = piix_pirq_select(pci_irqs[i], reserved);
     if (piix_pci_irqs[0] == 0x80)
-        dprintf(1, "PCI IRQ10/11 reserved by ISA NICs; PIIX routing disabled\n");
+        dprintf(1, "PCI IRQ10/11 reserved by ISA devices; PIIX routing disabled\n");
 
     pci_slot_get_irq = piix_pci_slot_get_irq;
 }
