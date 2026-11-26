@@ -111,6 +111,9 @@ jobs:
       - name: Verify firmware layout and ROM size audit
         run: python3 scripts/test-layoutrom.py
 
+      - name: Verify stable firmware version metadata
+        run: python3 scripts/test-buildversion.py
+
       - name: Verify incremental firmware linking workflow
         run: python3 scripts/test-link-workflow.py
 
