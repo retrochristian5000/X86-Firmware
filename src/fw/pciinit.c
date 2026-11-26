@@ -387,6 +387,11 @@ void pci_resume(void)
         return;
     }
 
+    /* Restore ECAM before any resume helper uses PCI configuration. */
+    if (MCHMmcfgBDF >= 0) {
+        mch_mmconfig_setup(MCHMmcfgBDF);
+    }
+
     if (PiixPmBDF >= 0) {
         piix4_pm_config_setup(PiixPmBDF);
     }
@@ -399,9 +404,6 @@ void pci_resume(void)
         ich9_smbus_enable(ICH9SmbusBDF);
     }
 
-    if(MCHMmcfgBDF >= 0) {
-        mch_mmconfig_setup(MCHMmcfgBDF);
-    }
 }
 
 static void pci_bios_init_device(struct pci_device *pci)
@@ -499,10 +501,20 @@ static void mch_mmconfig_setup(u16 bdf)
     u64 addr = Q35_HOST_BRIDGE_PCIEXBAR_ADDR;
     u32 upper = addr >> 32;
     u32 lower = (addr & 0xffffffff) | Q35_HOST_BRIDGE_PCIEXBAREN;
-    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, 0);
-    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR + 4, upper);
-    pci_config_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, lower);
-    pci_enable_mmconfig(Q35_HOST_BRIDGE_PCIEXBAR_ADDR, "q35");
+    /*
+     * PCIEXBAR controls the ECAM window itself. Always program it via
+     * configuration mechanism #1, including on resume with ECAM cached.
+     */
+    pci_ioconfig_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, 0);
+    pci_ioconfig_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR + 4, upper);
+    pci_ioconfig_writel(bdf, Q35_HOST_BRIDGE_PCIEXBAR, lower);
+    if (pci_ioconfig_readl(bdf, Q35_HOST_BRIDGE_PCIEXBAR) != lower
+        || pci_ioconfig_readl(bdf, Q35_HOST_BRIDGE_PCIEXBAR + 4) != upper) {
+        pci_enable_mmconfig(0, "q35");
+        dprintf(1, "PCIe: Q35 ECAM enable readback failed\n");
+        return;
+    }
+    pci_enable_mmconfig(addr, "q35");
 }
 
 static void mch_mem_addr_setup(struct pci_device *dev, void *arg)
