@@ -113,6 +113,20 @@ class VariantLayoutTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             layoutrom.select_profile(cfg, 'unknown')
 
+    def test_external_ide_profile_requires_option_rom_and_disk_services(self):
+        cfg = {'CONFIG_QEMU': 1, 'CONFIG_ROM_SIZE': 128,
+               'CONFIG_ATA': 0, 'CONFIG_OPTIONROMS': 1,
+               'CONFIG_DRIVES': 1, 'CONFIG_FLOPPY': 1}
+        name = 'seabios-128k-external-ide'
+        self.assertEqual(layoutrom.select_profile(cfg, name).name, name)
+        for option, invalid in (('CONFIG_ATA', 1),
+                                ('CONFIG_OPTIONROMS', 0),
+                                ('CONFIG_DRIVES', 0),
+                                ('CONFIG_FLOPPY', 0)):
+            with self.subTest(option=option):
+                with self.assertRaisesRegex(ValueError, 'External IDE'):
+                    layoutrom.select_profile(dict(cfg, **{option: invalid}), name)
+
     def test_compact_init_text_preserves_alignment_and_data_order(self):
         sections = [
             StubSection('.text.a', None, None, size=1, align=1),
