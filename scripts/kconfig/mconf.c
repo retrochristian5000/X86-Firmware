@@ -373,12 +373,12 @@ static void update_text(char *buf, size_t start, size_t end, void *_data)
 			if (k < JUMP_NB) {
 				int key = '0' + (pos->index % JUMP_NB) + 1;
 
-				sprintf(header, "(%c)", key);
+				snprintf(header, sizeof(header), "(%c)", key);
 				data->keys[k] = key;
 				data->targets[k] = pos->target;
 				k++;
 			} else {
-				sprintf(header, "   ");
+				memcpy(header, "   ", sizeof(header));
 			}
 
 			memcpy(buf + pos->offset, header, sizeof(header) - 1);
@@ -1003,6 +1003,11 @@ int main(int ac, char **av)
 {
 	char *mode;
 	int res;
+
+	if (ac != 2) {
+		fprintf(stderr, "Usage: %s Kconfig\n", av[0]);
+		return 1;
+	}
 
 	setlocale(LC_ALL, "");
 	bindtextdomain(PACKAGE, LOCALEDIR);

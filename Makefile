@@ -8,7 +8,8 @@
 OUT=out/
 
 # Common command definitions
-export HOSTCC             := $(CC)
+HOSTCC ?= cc
+export HOSTCC
 export CONFIG_SHELL       := sh
 export KCONFIG_AUTOHEADER := autoconf.h
 export KCONFIG_CONFIG     := $(CURDIR)/.config
@@ -53,6 +54,9 @@ SRC32FLAT=$(SRCBOTH) post.c e820map.c malloc.c romfile.c x86.c		\
     hw/tpm_drivers.c hw/nvme.c sha256.c sha512.c
 SRC32SEG=string.c output.c pcibios.c apm.c stacks.c hw/pci.c hw/serialio.c
 DIRS=src src/hw src/fw vgasrc
+
+# Configuration-only commands do not need a working firmware toolchain.
+config-only := $(if $(MAKECMDGOALS),$(if $(filter-out %onfig menuconfig-build help,$(MAKECMDGOALS)),,y))
 
 # Default compiler flags
 cc-option=$(shell if test -z "`$(1) $(2) -S -o /dev/null -xc /dev/null 2>&1`" \
@@ -100,7 +104,9 @@ MAKEFLAGS += --no-print-directory
 endif
 
 # Default targets
+ifneq ($(config-only),y)
 -include $(KCONFIG_CONFIG)
+endif
 
 target-y :=
 target-$(CONFIG_QEMU) += $(OUT)bios.bin
@@ -117,7 +123,8 @@ all: $(target-y)
 
 ################ Common build rules
 
-# Verify the build environment works.
+# Verify the build environment works for firmware builds only.
+ifneq ($(config-only),y)
 TESTGCC:=$(shell OUT="$(OUT)" CC="$(CC)" LD="$(LD)" scripts/test-build.sh)
 ifeq "$(TESTGCC)" "-1"
 $(error "Please upgrade the build environment")
@@ -126,6 +133,7 @@ endif
 ifeq "$(TESTGCC)" "0"
 # Use -fwhole-program
 CFLAGSWHOLE=-fwhole-program -DWHOLE_PROGRAM
+endif
 endif
 
 # Do a whole file compile by textually including all C code.
@@ -293,6 +301,8 @@ endef
 $(OUT)autoconf.h : $(KCONFIG_CONFIG) ; $(call do-kconfig, silentoldconfig)
 $(KCONFIG_CONFIG): src/Kconfig vgasrc/Kconfig ; $(call do-kconfig, olddefconfig)
 %onfig: ; $(call do-kconfig, $@)
+.PHONY: menuconfig-build
+menuconfig-build: ; $(call do-kconfig, $@)
 help: ; $(call do-kconfig, $@)
 
 

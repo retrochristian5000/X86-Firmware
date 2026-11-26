@@ -28,8 +28,25 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential \
             nasm \
+            libncurses-dev \
+            pkg-config \
             python3 \
             qemu-system-x86
+
+      - name: Build native menuconfig without a firmware compiler
+        run: make CC=false HOSTCC=cc menuconfig-build
+
+      - name: Verify Kconfig defaults and round trip
+        run: |
+          config="$(mktemp)"
+          trap 'rm -f "$config" "$config.old"' EXIT
+          make CC=false HOSTCC=cc KCONFIG_CONFIG="$config" olddefconfig
+          grep -Fx "CONFIG_PNPBIOS=y" "$config"
+          grep -Fx "# CONFIG_PNPBIOS_RUNTIME is not set" "$config"
+          cp "$config" "$config.expected"
+          trap 'rm -f "$config" "$config.old" "$config.expected"' EXIT
+          make CC=false HOSTCC=cc KCONFIG_CONFIG="$config" olddefconfig
+          cmp "$config" "$config.expected"
 
       - name: Run PCX decoder tests
         run: sh scripts/test-pcx.sh

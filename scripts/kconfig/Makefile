@@ -23,6 +23,9 @@ gconfig: $(obj)/gconf
 menuconfig: $(obj)/mconf
 	$< $(Kconfig)
 
+.PHONY: menuconfig-build
+menuconfig-build: $(obj)/mconf
+
 config: $(obj)/conf
 	$< --oldaskconfig $(Kconfig)
 
@@ -127,8 +130,10 @@ check-lxdialog  := $(srctree)/$(src)/lxdialog/check-lxdialog.sh
 
 # Use recursively expanded variables so we do not call gcc unless
 # we really need to do so. (Do not call gcc as part of make mrproper)
-HOST_EXTRACFLAGS += $(shell $(CONFIG_SHELL) $(check-lxdialog) -ccflags) \
-                    -DLOCALE
+ifneq ($(filter menuconfig menuconfig-build,$(MAKECMDGOALS)),)
+HOST_EXTRACFLAGS += $(shell $(CONFIG_SHELL) $(check-lxdialog) -ccflags)
+endif
+HOST_EXTRACFLAGS += -DLOCALE
 
 # ===========================================================================
 # Shared Makefile for the various kconfig executables:
@@ -160,7 +165,7 @@ ifeq ($(MAKECMDGOALS),nconfig)
 	hostprogs-y += nconf
 endif
 
-ifeq ($(MAKECMDGOALS),menuconfig)
+ifneq ($(filter menuconfig menuconfig-build,$(MAKECMDGOALS)),)
 	hostprogs-y += mconf
 endif
 
@@ -193,7 +198,7 @@ clean-files     += config.pot linux.pot
 PHONY += $(obj)/dochecklxdialog
 $(addprefix $(obj)/,$(lxdialog)): $(obj)/dochecklxdialog
 $(obj)/dochecklxdialog:
-	$(Q)$(CONFIG_SHELL) $(check-lxdialog) -check $(HOSTCC) $(HOST_EXTRACFLAGS) $(HOSTLOADLIBES_mconf)
+	$(Q)$(CONFIG_SHELL) $(check-lxdialog) -check $(HOSTCC) $(HOSTCFLAGS) $(HOST_EXTRACFLAGS) -x c - -x none $(HOSTLOADLIBES_mconf)
 
 always := dochecklxdialog
 

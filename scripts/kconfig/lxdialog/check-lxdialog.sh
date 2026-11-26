@@ -4,11 +4,15 @@
 # What library to link
 ldflags()
 {
-	pkg-config --libs ncursesw 2>/dev/null && exit
-	pkg-config --libs ncurses 2>/dev/null && exit
+	for pkg in ncursesw ncurses; do
+		if pkg-config --exists "$pkg" 2>/dev/null; then
+			pkg-config --libs "$pkg"
+			return $?
+		fi
+	done
 	for ext in so a dll.a dylib ; do
 		for lib in ncursesw ncurses curses ; do
-			$cc -print-file-name=lib${lib}.${ext} | grep -q /
+			"$@" -print-file-name=lib${lib}.${ext} | grep -q /
 			if [ $? -eq 0 ]; then
 				echo "-l${lib}"
 				exit
@@ -21,6 +25,13 @@ ldflags()
 # Where is ncurses.h?
 ccflags()
 {
+	for pkg in ncursesw ncurses; do
+		if pkg-config --exists "$pkg" 2>/dev/null; then
+			pkg-config --cflags "$pkg" || return 1
+			printf '%s\n' '-DCURSES_LOC="<curses.h>"'
+			return 0
+		fi
+	done
 	if [ -f /usr/include/ncursesw/curses.h ]; then
 		echo '-I/usr/include/ncursesw -DCURSES_LOC="<curses.h>"'
 		echo ' -DNCURSES_WIDECHAR=1'
@@ -36,14 +47,23 @@ ccflags()
 }
 
 # Temp file, try to clean up after us
-tmp=.lxdialog.tmp
-trap "rm -f $tmp" 0 1 2 3 15
+
 
 # Check if we can link to ncurses
 check() {
-        $cc -x c - -o $tmp 2>/dev/null <<'EOF'
+        tmp=$(mktemp .lxdialog.XXXXXXXX) || exit 1
+        trap 'rm -f "$tmp"' 0
+        trap 'exit 1' 1 2 3 15
+        "$@" -o "$tmp" <<'EOF'
 #include CURSES_LOC
-int main() {}
+int main(void)
+{
+    WINDOW *win = initscr();
+    if (!win)
+        return 1;
+    endwin();
+    return 0;
+}
 EOF
 	if [ $? != 0 ]; then
 	    echo " *** Unable to find the ncurses libraries or the"       1>&2
@@ -57,7 +77,7 @@ EOF
 }
 
 usage() {
-	printf "Usage: $0 [-check compiler options|-ccflags|-ldflags compiler options]\n"
+	printf 'Usage: %s [-check compiler options|-ccflags|-ldflags compiler options]\n' "$0"
 }
 
 if [ $# -eq 0 ]; then
@@ -65,22 +85,19 @@ if [ $# -eq 0 ]; then
 	exit 1
 fi
 
-cc=""
 case "$1" in
 	"-check")
 		shift
-		cc="$@"
-		check
+		check "$@"
 		;;
 	"-ccflags")
 		ccflags
 		;;
 	"-ldflags")
 		shift
-		cc="$@"
-		ldflags
+		ldflags "$@"
 		;;
-	"*")
+	*)
 		usage
 		exit 1
 		;;

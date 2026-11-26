@@ -443,7 +443,7 @@ menu "BIOS interfaces"
         bool "Keyboard hook interface"
         default y
         help
-            Support calling int155f on each keyboard event.
+            Support calling int 15h, AH=4Fh on each keyboard event.
     config MOUSE
         bool "Mouse interface"
         default y
