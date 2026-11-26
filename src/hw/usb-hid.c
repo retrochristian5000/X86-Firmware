@@ -459,10 +459,12 @@ usb_mouse_command(int command, u8 *param)
         // XXX
         return 0;
     case PSMOUSE_CMD_RESET_BAT:
-    case PSMOUSE_CMD_GETID:
-        // Return the id of a standard AT mouse.
         param[0] = 0xaa;
         param[1] = 0x00;
+        return 0;
+    case PSMOUSE_CMD_GETID:
+        // Return the single-byte ID of a standard PS/2 mouse.
+        param[0] = 0x00;
         return 0;
 
     case PSMOUSE_CMD_GETINFO:
