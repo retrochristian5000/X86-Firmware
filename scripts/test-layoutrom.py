@@ -134,6 +134,36 @@ class VariantLayoutTests(unittest.TestCase):
         self.assertLessEqual(ordered[-1].finalloc + ordered[-1].size, 0x1000)
 
 
+class RomAttributeReportTests(unittest.TestCase):
+    def test_reports_retention_and_runtime_paths_without_mutation(self):
+        root = StubSection('.text.runtime.entry', 0xf1000, 0,
+                           '32flat', 12, '32flat', 4)
+        child = StubSection('.text.helper', 0xf1010, 0,
+                            '32flat', 40, '32flat', 16)
+        init = StubSection('.text.init.start', 0xe1000, 0,
+                           '32flat', 20, '32init')
+        unused = StubSection('.text.runtime.unused', None, None,
+                             '32flat', 100, None)
+        fixed = StubSection('.fixedaddr.fff0', 0xffff0, 0xfff0,
+                            '16', 16, 'fixed')
+        sections = [root, child, init, fixed]
+        allsections = sections + [unused]
+        paths = {root: [], child: [root.name], fixed: []}
+        before = [s.finalloc for s in allsections]
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            layoutrom.reportRomAttributes(allsections, sections, paths)
+        report = output.getvalue()
+        self.assertRegex(report, r'explicit-runtime\s+retained=12 bytes '
+                         r'\(1 sections\) discarded=100 bytes')
+        self.assertIn('resident: 40 bytes .text.helper (first runtime root: '
+                      '.text.runtime.entry)', report)
+        self.assertIn('aligned: 16-byte boundary 40 bytes 32flat:.text.helper',
+                      report)
+        self.assertNotIn('resident: 20 bytes .text.init.start', report)
+        self.assertEqual(before, [s.finalloc for s in allsections])
+
+
 class RomSizeReportTests(unittest.TestCase):
     def test_only_reachable_rom_sections_are_ranked(self):
         sections = [

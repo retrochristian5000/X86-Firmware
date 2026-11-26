@@ -74,17 +74,17 @@ class LinkWorkflowTests(unittest.TestCase):
                            for line in output.splitlines())
 
             first = build()
-            self.assertEqual(first.count('LAYOUT'), 1, first)
+            self.assertEqual(first.splitlines().count('LAYOUT'), 1, first)
             self.assertEqual(link_count(first), 5, first)
             noop = build()
-            self.assertEqual(noop.count('LAYOUT'), 0, noop)
+            self.assertEqual(noop.splitlines().count('LAYOUT'), 0, noop)
             self.assertEqual(link_count(noop), 0, noop)
 
             # Invalidate only the script generator, not the compiled objects.
             time.sleep(0.02)
             (work / 'scripts/layoutrom.py').touch()
             layout = build()
-            self.assertEqual(layout.count('LAYOUT'), 1, layout)
+            self.assertEqual(layout.splitlines().count('LAYOUT'), 1, layout)
             self.assertEqual(link_count(layout), 3, layout)
             self.assertNotIn('COMPILE out/version.o', layout)
 
@@ -93,7 +93,7 @@ class LinkWorkflowTests(unittest.TestCase):
                          'romlayout32flat.lds'):
                 (work / 'out' / name).unlink()
                 recovered = build()
-                self.assertEqual(recovered.count('LAYOUT'), 1, recovered)
+                self.assertEqual(recovered.splitlines().count('LAYOUT'), 1, recovered)
                 self.assertTrue((work / 'out' / name).is_file())
                 self.assertEqual(link_count(recovered), 3, recovered)
                 self.assertNotIn('LINK out/code16.o', recovered)

@@ -360,6 +360,53 @@ def reportRomSectionSizes(sections, limit=12):
             section.size, section.category, section.fileid, section.name))
 
 
+def reportRomAttributes(allsections, sections, runtime, limit=10):
+    """Report section attributes as emitted, not hypothetical removable bytes."""
+    kept = set(sections)
+    groups = (
+        ('explicit-runtime', '.text.runtime.'),
+        ('explicit-init', '.text.init.'),
+        ('fseg-text', '.text.32fseg.'),
+        ('fseg-data', '.data.varfseg.'),
+        ('lowmem-data', '.data.varlow.'),
+        ('fixed-address', '.fixedaddr.'),
+        ('init-only-data', '.data.varinit.'),
+    )
+    print("ROM attribute audit: declared section roles (raw input bytes)")
+    for label, prefix in groups:
+        matched = [s for s in allsections if s.name.startswith(prefix)]
+        retained = [s for s in matched if s in kept]
+        print("  attribute: %-18s retained=%d bytes (%d sections) "
+              "discarded=%d bytes (%d sections)" %
+              (label, sum(s.size for s in retained), len(retained),
+               sum(s.size for s in matched if s not in kept),
+               len(matched) - len(retained)))
+
+    # A runtime path can keep code resident without an explicit runtime
+    # annotation. The first discovered path is diagnostic, not exclusive.
+    candidates = [s for s in sections
+                  if s.category == '32flat' and s.name.startswith('.text.')
+                  and not s.name.startswith('.text.runtime.')
+                  and s in runtime]
+    candidates.sort(key=lambda s: (-s.size, s.name))
+    print("ROM attribute audit: largest indirectly resident flat text")
+    for section in candidates[:limit]:
+        chain = runtime[section]
+        root = chain[0] if chain else section.name
+        print("  resident: %d bytes %s (first runtime root: %s)" %
+              (section.size, section.name, root))
+
+    # sh_addralign does not establish whether an attribute or the target
+    # selected the alignment; do not report these bytes as wasted padding.
+    aligned = sorted((s for s in sections if s.align > 1 and s.size),
+                     key=lambda s: (-s.align, -s.size, s.fileid, s.name))
+    print("ROM attribute audit: retained sections with alignment > 1: %d" %
+          len(aligned))
+    for section in aligned[:limit]:
+        print("  aligned: %d-byte boundary %d bytes %s:%s" %
+              (section.align, section.size, section.fileid, section.name))
+
+
 def reportRomGaps(sections, limit=10):
     """Inventory physical gaps, not all of which are removable padding."""
     placed = sorted((s for s in sections if s.finalloc is not None and s.size),
@@ -866,6 +913,7 @@ def main():
     li = doLayout(sections, config, genreloc, profile)
     if os.environ.get('WHP_ROM_SIZE_REPORT') == '1':
         reportRomSectionSizes(li.sections)
+        reportRomAttributes(allsections, li.sections, runtimesections)
         reportRomGaps(li.sections)
         reportRomStringSections(li.sections)
         reportRomStringCode(li.sections)
