@@ -68,15 +68,24 @@ pic_setup(void)
 void
 enable_hwirq(int hwirq, struct segoff_s func)
 {
-    if (!CONFIG_HARDWARE_IRQ)
+    if (!CONFIG_HARDWARE_IRQ || (unsigned)hwirq >= 16)
         return;
-    pic_irqmask_mask(1 << hwirq, 0);
+    u32 flags = save_flags();
+    irq_disable();
+
     int vector;
-    if (hwirq < 8)
+    u16 mask = 1U << hwirq;
+    if (hwirq < 8) {
         vector = BIOS_HWIRQ0_VECTOR + hwirq;
-    else
+    } else {
         vector = BIOS_HWIRQ8_VECTOR + hwirq - 8;
+        // Slave interrupts also require the master cascade input.
+        mask |= PIC1_IRQ2;
+    }
+    // Install the handler before permitting delivery of pending requests.
     SET_IVT(vector, func);
+    pic_irqmask_mask(mask, 0);
+    restore_flags(flags);
 }
 
 static u8
