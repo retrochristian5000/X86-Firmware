@@ -11,19 +11,32 @@
 #include "string.h" // checksum
 #include "util.h" // pnp_init
 
-extern struct pnpheader PNPHEADER;
-extern char pnp_string[];
-
 #if CONFIG_PNPBIOS
-struct pnpheader PNPHEADER __aligned(16) VARFSEG = {
-    .signature = PNP_SIGNATURE,
-    .version = 0x10,
-    .length = sizeof(PNPHEADER),
-    .real_cs = SEG_BIOS,
-    .prot_base = BUILD_BIOS_ADDR,
-    .real_ds = SEG_BIOS,
-    .prot_database = BUILD_BIOS_ADDR,
+#define PNP_HEADER_INIT { \
+    .signature = PNP_SIGNATURE, \
+    .version = 0x10, \
+    .length = sizeof(struct pnpheader), \
+    .real_cs = SEG_BIOS, \
+    .prot_base = BUILD_BIOS_ADDR, \
+    .real_ds = SEG_BIOS, \
+    .prot_database = BUILD_BIOS_ADDR, \
+}
+
+#if CONFIG_PNPBIOS_RUNTIME
+// Experimental OS-discoverable interface; system-device services are absent.
+struct pnpheader PNPHEADER __aligned(16) VARFSEG = PNP_HEADER_INIT;
+#else
+// Option ROMs receive an explicit pointer to this BBS header. Keep its
+// signature off a 16-byte boundary so an OS does not discover incomplete
+// PnP runtime services. The full header and BBS function 60h remain valid.
+struct {
+    u8 pad;
+    struct pnpheader header;
+} PACKED __aligned(2) BBS_PNP VARFSEG = {
+    .header = PNP_HEADER_INIT,
 };
+#define PNPHEADER BBS_PNP.header
+#endif
 #else
 // We need a copy of this string in the 0xf000 segment, but we are not
 // actually a PnP BIOS, so make sure it is *not* aligned, so OSes will
@@ -65,9 +78,11 @@ handle_pnp(u16 *args)
 u16
 get_pnp_offset(void)
 {
-    if (! CONFIG_PNPBIOS)
-        return (u32)pnp_string + 1 - BUILD_BIOS_ADDR;
+#if CONFIG_PNPBIOS
     return (u32)&PNPHEADER - BUILD_BIOS_ADDR;
+#else
+    return (u32)pnp_string + 1 - BUILD_BIOS_ADDR;
+#endif
 }
 
 // romlayout.S
@@ -77,12 +92,11 @@ extern void entry_pnp_prot(void);
 void
 pnp_init(void)
 {
-    if (! CONFIG_PNPBIOS)
-        return;
-
+#if CONFIG_PNPBIOS
     dprintf(3, "init PNPBIOS table\n");
 
     PNPHEADER.real_ip = (u32)entry_pnp_real - BUILD_BIOS_ADDR;
     PNPHEADER.prot_ip = (u32)entry_pnp_prot - BUILD_BIOS_ADDR;
     PNPHEADER.checksum -= checksum(&PNPHEADER, sizeof(PNPHEADER));
+#endif
 }

@@ -42,7 +42,8 @@ copy_pir(void *pos)
         return;
     if (PirAddr)
         return;
-    if (p->size < sizeof(*p))
+    if (p->version != 0x0100 || p->size < sizeof(*p)
+        || (p->size - sizeof(*p)) % sizeof(struct pir_slot))
         return;
     if (checksum(pos, p->size) != 0)
         return;

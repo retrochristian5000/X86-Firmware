@@ -404,10 +404,18 @@ menu "BIOS interfaces"
         help
             Support int 15/53 APM BIOS calls.
     config PNPBIOS
-        bool "PnP BIOS interface"
+        bool "PnP BIOS / BBS entry point"
         default y
         help
-            Support PnP BIOS entry point.
+            Support the option ROM BBS version query.
+    config PNPBIOS_RUNTIME
+        bool "Advertise experimental PnP BIOS runtime interface"
+        depends on PNPBIOS
+        default n
+        help
+            Expose the aligned $PnP installation structure to operating
+            systems. System device node enumeration and configuration
+            are not implemented. Leave disabled for normal guests.
     config OPTIONROMS
         bool "Option ROMS"
         default y
