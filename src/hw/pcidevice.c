@@ -70,11 +70,15 @@ pci_probe_devices(void)
             u8 v = dev->header_type & 0x7f;
             if (v == PCI_HEADER_TYPE_BRIDGE || v == PCI_HEADER_TYPE_CARDBUS) {
                 u8 secbus = pci_config_readb(bdf, PCI_SECONDARY_BUS);
+                u8 subbus = pci_config_readb(bdf, PCI_SUBORDINATE_BUS);
                 dev->secondary_bus = secbus;
-                if (secbus > bus && !busdevs[secbus])
-                    busdevs[secbus] = dev;
-                if (secbus > MaxPCIBus)
-                    MaxPCIBus = secbus;
+                // A closed forwarding window is not an enumerated bus.
+                if (secbus > bus && secbus <= subbus) {
+                    if (!busdevs[secbus])
+                        busdevs[secbus] = dev;
+                    if (secbus > MaxPCIBus)
+                        MaxPCIBus = secbus;
+                }
             }
             dprintf(4, "PCI device %pP (vd=%04x:%04x c=%04x)\n"
                     , dev, dev->vendor, dev->device, dev->class);
