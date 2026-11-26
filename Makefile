@@ -258,6 +258,24 @@ $(OUT)bios.bin.elf: $(OUT)rom.o $(OUT)bios.bin.prep
 	$(Q)$(STRIP) -R .comment $< -o $(OUT)bios.bin.elf
 
 
+# Compare the actual ROM payload, not the ELF container, without modifying
+# rom.o or requiring checkrom.py to accept an oversized image first.
+.PHONY: rom-strip-audit
+rom-strip-audit: $(OUT)rom.o
+	$(Q)set -eu; umask 077; tmp=$(mktemp -d "$(OUT)rom-strip-audit.XXXXXX"); \
+		trap 'rm -f "$tmp/original.bin" "$tmp/stripped.o" "$tmp/stripped.bin"; rmdir "$tmp"' 0; \
+		trap 'exit 1' HUP INT TERM; \
+		$(OBJCOPY) -O binary "$<" "$tmp/original.bin"; \
+		$(STRIP) --strip-all -R .comment "$<" -o "$tmp/stripped.o"; \
+		$(OBJCOPY) -O binary "$tmp/stripped.o" "$tmp/stripped.bin"; \
+		printf 'ELF bytes: %d -> %d\n' "$(wc -c < "$<")" "$(wc -c < "$tmp/stripped.o")"; \
+		printf 'Raw ROM bytes: %d -> %d\n' "$(wc -c < "$tmp/original.bin")" "$(wc -c < "$tmp/stripped.bin")"; \
+		if ! cmp -s "$tmp/original.bin" "$tmp/stripped.bin"; then \
+			printf '%s\n' 'Error: strip changed the firmware payload; inspect the ELF section layout.' >&2; \
+			exit 1; \
+		fi; \
+		printf '%s\n' 'Strip removed no raw ROM bytes; the firmware payload is unchanged.'
+
 ################ VGA build rules
 
 # VGA src files
