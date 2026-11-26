@@ -153,14 +153,17 @@ handle_1a03(struct bregs *regs)
     // Bit4 in try#1 flipped in hardware (forced low) due to bit7=1
     // My assumption: RegB = ((RegB & 01100000b) | 00000010b)
     if (rtc_updating()) {
-        rtc_setup();
-        // fall through as if an update were not in progress
+        set_invalid(regs);
+        return;
     }
+    // Inhibit RTC updates until all three time fields have been written.
+    u8 old_b = rtc_read(CMOS_STATUS_B);
+    rtc_write(CMOS_STATUS_B, old_b | RTC_B_SET);
     rtc_write(CMOS_RTC_SECONDS, regs->dh);
     rtc_write(CMOS_RTC_MINUTES, regs->cl);
     rtc_write(CMOS_RTC_HOURS, regs->ch);
     // Set Daylight Savings time enabled bit to requested value
-    u8 val8 = ((rtc_read(CMOS_STATUS_B) & (RTC_B_PIE|RTC_B_AIE))
+    u8 val8 = ((old_b & (RTC_B_PIE|RTC_B_AIE))
                | RTC_B_24HR | (regs->dl & RTC_B_DSE));
     rtc_write(CMOS_STATUS_B, val8);
     regs->ah = 0;
@@ -202,16 +205,17 @@ handle_1a05(struct bregs *regs)
     // Bit4 in try#1 flipped in hardware (forced low) due to bit7=1
     // My assumption: RegB = (RegB & 01111111b)
     if (rtc_updating()) {
-        rtc_setup();
         set_invalid(regs);
         return;
     }
+    u8 old_b = rtc_read(CMOS_STATUS_B);
+    rtc_write(CMOS_STATUS_B, old_b | RTC_B_SET);
     rtc_write(CMOS_RTC_YEAR, regs->cl);
     rtc_write(CMOS_RTC_MONTH, regs->dh);
     rtc_write(CMOS_RTC_DAY_MONTH, regs->dl);
     SET_LOW(Century, regs->ch);
     // clear halt-clock bit
-    u8 val8 = rtc_read(CMOS_STATUS_B) & ~RTC_B_SET;
+    u8 val8 = old_b & ~RTC_B_SET;
     rtc_write(CMOS_STATUS_B, val8);
     regs->ah = 0;
     regs->al = val8; // AL = val last written to Reg B
@@ -240,8 +244,8 @@ handle_1a06(struct bregs *regs)
         return;
     }
     if (rtc_updating()) {
-        rtc_setup();
-        // fall through as if an update were not in progress
+        set_invalid(regs);
+        return;
     }
     rtc_write(CMOS_RTC_SECONDS_ALARM, regs->dh);
     rtc_write(CMOS_RTC_MINUTES_ALARM, regs->cl);
