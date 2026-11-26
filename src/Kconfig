@@ -410,12 +410,13 @@ menu "BIOS interfaces"
             Support the option ROM BBS version query.
     config PNPBIOS_RUNTIME
         bool "Advertise experimental PnP BIOS runtime interface"
-        depends on PNPBIOS
+        depends on PNPBIOS && PCIBIOS && QEMU
         default n
         help
-            Expose the aligned $PnP installation structure to operating
-            systems. System device node enumeration and configuration
-            are not implemented. Leave disabled for normal guests.
+            Expose a partial PnP BIOS installation structure on supported
+            PIIX platforms. Functions 00h and 01h describe one fixed PCI
+            root-bus node; configuration writes are rejected. This is not
+            a complete motherboard inventory. Leave disabled for normal guests.
     config OPTIONROMS
         bool "Option ROMS"
         default y

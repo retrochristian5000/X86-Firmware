@@ -286,6 +286,7 @@ qemu_platform_setup(void)
 
     // Initialize pci
     pci_setup();
+    pnp_runtime_setup();
     smm_device_setup();
     smm_setup();
 

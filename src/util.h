@@ -257,6 +257,7 @@ void pmm_prepboot(void);
 // pnpbios.c
 u16 get_pnp_offset(void);
 void pnp_init(void);
+void pnp_runtime_setup(void);
 
 // post.c
 void interface_init(void);

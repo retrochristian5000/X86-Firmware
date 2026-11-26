@@ -1,12 +1,22 @@
 # Legacy Windows Plug and Play BIOS and PCI routing
 
-The firmware implements the BBS version check (function 60h) but does
-not yet implement the mandatory system-device services (00h–02h)
-defined in the Plug and Play BIOS Specification 1.0A, sections 4.4–4.5.
-The BBS header is supplied directly to option ROMs and intentionally
-not aligned to an OS-scannable boundary by default. The experimental
-CONFIG_PNPBIOS_RUNTIME option restores the former advertisement for
-development; it is not a complete PnP BIOS implementation.
+The firmware supplies the BBS header and version check (function 60h)
+directly to option ROMs, independently of OS discovery. The experimental
+CONFIG_PNPBIOS_RUNTIME option is disabled by default. On a QEMU PIIX3
+or PIIX4 platform with the router at 00:01.0, it now publishes a separate
+aligned installation structure after PCI initialization.
+
+Functions 00h and 01h report a single fixed PNP0A03 PCI root-bus node
+with conventional configuration mechanism #1 I/O ports CF8h–CFFh.
+The node has a stable handle (0), three terminated resource blocks,
+and identical current and boot configuration. Enumeration returns FFh
+after that node. Function 02h rejects attempts to configure it; no PCI
+registers are written by these runtime calls.
+
+This is only a partial inventory, not a compliant PnP BIOS. PIC, PIT,
+RTC, DMA, keyboard and other motherboard devices, ISA PnP and ESCD
+services remain to be implemented. Do not enable runtime discovery for
+normal guests or assume this resolves NDIS calibration failures.
 
 PCI BIOS INT 1Ah B1xx and the BIOS32 directory are independent.
 The built-in PIIX routing table now identifies a discovered PIIX3
