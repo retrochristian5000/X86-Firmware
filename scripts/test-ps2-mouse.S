@@ -19,6 +19,9 @@ start:
     movw $0x0300, %bx
     int $0x15
     jc fail
+    movw $0xc201, %ax
+    int $0x15
+    jc fail
     cmpw $0x00aa, %bx
     jne fail
     movw $0xc204, %ax
@@ -57,7 +60,7 @@ start:
     jc fail
     testb $0x20, %bl
     jnz fail
-    cmpb $4, %cl
+    cmpb $2, %cl  /* Resolution code 2 = four counts/mm. */
     jne fail
     cmpb $100, %dl
     jne fail
