@@ -13,6 +13,7 @@
 #include "output.h" // dprintf
 #include "std/pirtable.h" // struct pir_header
 #include "string.h" // checksum
+#include "romfile.h" // romfile_loadint
 #include "util.h" // PirAddr
 
 // QEMU i440fx has 32 root-bus device numbers; slot zero is the host
@@ -28,7 +29,7 @@ struct pir_table {
 } PACKED;
 
 static void
-pir_add_slot(struct pir_table *table, int dev)
+pir_add_slot(struct pir_table *table, int dev, u16 irq_bitmap)
 {
     struct pir_slot *slot = &table->slots[
         (table->pir.size - sizeof(table->pir)) / sizeof(*slot)];
@@ -36,7 +37,7 @@ pir_add_slot(struct pir_table *table, int dev)
     // QEMU pc_pci_slot_get_pirq(): rotate INTA-D by device number minus one.
     for (int pin = 0; pin < 4; pin++) {
         slot->links[pin].link = 0x60 + ((dev - 1 + pin) & 3);
-        slot->links[pin].bitmap = PIIX_PIRQ_BITMAP;
+        slot->links[pin].bitmap = irq_bitmap;
     }
     slot->slot_nr = dev - 1;
     table->pir.size += sizeof(*slot);
@@ -77,9 +78,11 @@ pirtable_setup(void)
             occupied |= 1U << pci_bdf_to_dev(pci->bdf);
     }
 
+    u16 irq_bitmap = PIIX_PIRQ_BITMAP
+                     & ~(u16)romfile_loadint("etc/isa-ne2000-irq-mask", 0);
     for (int dev = 1; dev <= PIR_ROOT_SLOTS; dev++) {
         if (dev <= PIR_LEGACY_SLOTS || (occupied & (1U << dev)))
-            pir_add_slot(&table, dev);
+            pir_add_slot(&table, dev, irq_bitmap);
     }
 
     table.pir.checksum = -checksum(&table, table.pir.size);
