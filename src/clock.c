@@ -29,8 +29,9 @@ bcd2bin(u8 val)
 
 u8 Century VARLOW;
 
-// Read a coherent RTC time or date triplet without halting the clock.
+// Read a coherent RTC time or date without halting the clock.
 // The seconds check also catches an update that completes during the read.
+// For QEMU dates, include the RTC century in the same snapshot.
 static int
 rtc_read_triplet(u8 high, u8 middle, u8 low, u32 *value)
 {
@@ -41,8 +42,10 @@ rtc_read_triplet(u8 high, u8 middle, u8 low, u32 *value)
         u32 data = (u32)rtc_read(high) << 16;
         data |= (u32)rtc_read(middle) << 8;
         data |= rtc_read(low);
-        if (!(rtc_read(CMOS_STATUS_A) & RTC_A_UIP)
-            && seconds == rtc_read(CMOS_RTC_SECONDS)) {
+        if (CONFIG_QEMU && high == CMOS_RTC_YEAR)
+            data |= (u32)rtc_read(CMOS_CENTURY) << 24;
+        if (seconds == rtc_read(CMOS_RTC_SECONDS)
+            && !(rtc_read(CMOS_STATUS_A) & RTC_A_UIP)) {
             *value = data;
             return 0;
         }
@@ -71,10 +74,8 @@ clock_setup(void)
         SET_BDA(timer_counter, 0);
     }
 
-    // Setup Century storage
-    if (CONFIG_QEMU) {
-        Century = rtc_read(CMOS_CENTURY);
-    } else {
+    // Only platforms without QEMU's RTC century need the fallback.
+    if (!CONFIG_QEMU) {
         // Infer current century from the year.
         u8 year = rtc_read(CMOS_RTC_YEAR);
         if (year > 0x80)
@@ -185,7 +186,7 @@ handle_1a04(struct bregs *regs)
     regs->cl = date >> 16;
     regs->dh = date >> 8;
     regs->dl = date;
-    regs->ch = GET_LOW(Century);
+    regs->ch = CONFIG_QEMU ? date >> 24 : GET_LOW(Century);
     regs->al = regs->ch;
     set_success(regs);
 }
@@ -213,7 +214,10 @@ handle_1a05(struct bregs *regs)
     rtc_write(CMOS_RTC_YEAR, regs->cl);
     rtc_write(CMOS_RTC_MONTH, regs->dh);
     rtc_write(CMOS_RTC_DAY_MONTH, regs->dl);
-    SET_LOW(Century, regs->ch);
+    if (CONFIG_QEMU)
+        rtc_write(CMOS_CENTURY, regs->ch);
+    else
+        SET_LOW(Century, regs->ch);
     // clear halt-clock bit
     u8 val8 = old_b & ~RTC_B_SET;
     rtc_write(CMOS_STATUS_B, val8);
