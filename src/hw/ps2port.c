@@ -152,6 +152,7 @@ i8042_reboot(void)
 
 #define PS2_RET_ACK             0xfa
 #define PS2_RET_NAK             0xfe
+#define PS2_SEND_ATTEMPTS       3
 
 static int
 ps2_recvbyte(int aux, int needack, int timeout)
@@ -190,22 +191,18 @@ static int
 ps2_sendbyte(int aux, u8 command, int timeout)
 {
     dprintf(7, "ps2_sendbyte aux=%d cmd=%x\n", aux, command);
-    int ret;
-    if (aux)
-        ret = i8042_aux_write(command);
-    else
-        ret = i8042_kbd_write(command);
-    if (ret)
-        return ret;
+    for (int attempt = 0; attempt < PS2_SEND_ATTEMPTS; attempt++) {
+        int ret = aux ? i8042_aux_write(command) : i8042_kbd_write(command);
+        if (ret)
+            return ret;
 
-    // Read ack.
-    ret = ps2_recvbyte(aux, 1, timeout);
-    if (ret < 0)
-        return ret;
-    if (ret != PS2_RET_ACK)
-        return -1;
-
-    return 0;
+        ret = ps2_recvbyte(aux, 1, timeout);
+        if (ret == PS2_RET_ACK)
+            return 0;
+        if (ret != PS2_RET_NAK)
+            return -1;
+    }
+    return -1;
 }
 
 u8 Ps2ctr VARLOW = I8042_CTR_KBDDIS | I8042_CTR_AUXDIS;
@@ -258,7 +255,12 @@ __ps2_command(int aux, int command, u8 *param)
                 goto fail;
             param[1] = ret;
         }
-    } else if (command == ATKBD_CMD_GETID) {
+        if (aux && param[0] != 0xaa) {
+            dprintf(1, "PS/2 mouse self-test failed (%02x)\n", param[0]);
+            ret = -1;
+            goto fail;
+        }
+    } else if (!aux && command == ATKBD_CMD_GETID) {
         // Getid is special wrt bytes received.
 
         // Send command.
@@ -304,6 +306,16 @@ __ps2_command(int aux, int command, u8 *param)
         }
     }
 
+    // Commit auxiliary-port state only after the mouse acknowledges.
+    // Reset also disables reporting, irrespective of the previous state.
+    if (aux) {
+        if (command == PSMOUSE_CMD_ENABLE)
+            ps2ctr = ((ps2ctr | (CONFIG_HARDWARE_IRQ ? I8042_CTR_AUXINT : 0))
+                      & ~I8042_CTR_AUXDIS);
+        else if (command == PSMOUSE_CMD_DISABLE
+                 || command == PSMOUSE_CMD_RESET_BAT)
+            ps2ctr = (ps2ctr | I8042_CTR_AUXDIS) & ~I8042_CTR_AUXINT;
+    }
     ret = 0;
 
 fail:
@@ -339,17 +351,6 @@ ps2_mouse_command(int command, u8 *param)
 {
     if (! CONFIG_PS2PORT)
         return -1;
-
-    // Update ps2ctr for mouse enable/disable.
-    if (command == PSMOUSE_CMD_ENABLE || command == PSMOUSE_CMD_DISABLE) {
-        u8 ps2ctr = GET_LOW(Ps2ctr);
-        if (command == PSMOUSE_CMD_ENABLE)
-            ps2ctr = ((ps2ctr | (CONFIG_HARDWARE_IRQ ? I8042_CTR_AUXINT : 0))
-                      & ~I8042_CTR_AUXDIS);
-        else
-            ps2ctr = (ps2ctr | I8042_CTR_AUXDIS) & ~I8042_CTR_AUXINT;
-        SET_LOW(Ps2ctr, ps2ctr);
-    }
 
     return ps2_command(1, command, param);
 }
@@ -397,8 +398,8 @@ handle_09(void)
 
     // read key from keyboard controller
     u8 v = inb(PORT_PS2_STATUS);
-    if (v & I8042_STR_AUXDATA) {
-        dprintf(1, "ps2 keyboard irq but found mouse data?!\n");
+    if (!(v & I8042_STR_OBF) || (v & I8042_STR_AUXDATA)) {
+        dprintf(1, "ps2 keyboard irq without keyboard data\n");
         goto done;
     }
     v = inb(PORT_PS2_DATA);
