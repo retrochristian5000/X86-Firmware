@@ -9,6 +9,7 @@
 #include "config.h" // CONFIG_*
 #include "output.h" // dprintf
 #include "pic.h" // pic_*
+#include "pic-spurious.h" // pic_finish_irq7, pic_finish_irq15
 
 u16
 pic_irqmask_read(void)
@@ -121,4 +122,20 @@ handle_hwpic2(void)
 {
     dprintf(DEBUG_ISR_hwpic2, "handle_hwpic2 irq=%x\n", pic_isr2_read());
     pic_eoi2();
+}
+
+// IRQ7 and IRQ15 may be default (spurious) vectors. Keep separate
+// entry points so an unrelated in-service IRQ cannot be acknowledged.
+void VISIBLE16
+handle_hwpic7(void)
+{
+    if (CONFIG_HARDWARE_IRQ)
+        pic_finish_irq7(pic_isr1_read());
+}
+
+void VISIBLE16
+handle_hwpic15(void)
+{
+    if (CONFIG_HARDWARE_IRQ)
+        pic_finish_irq15(pic_isr2_read());
 }

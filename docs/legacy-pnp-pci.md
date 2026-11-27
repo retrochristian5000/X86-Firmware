@@ -86,6 +86,21 @@ sequence twice, without performing live DMA. Build with
 This does not change the PnP BIOS inventory or provide PC/PCI or
 distributed DMA services.
 
+Default IRQ7 and IRQ15 vectors now have dedicated handlers. With normal
+cascaded 8259A operation (non-auto EOI, fully nested mode), the handler
+checks ISR bit 7 before acknowledging the corresponding controller.
+A spurious IRQ7 sends no EOI; a spurious IRQ15 sends only a specific
+master IRQ2 EOI. Real IRQ7/15 use specific IRQ7 EOIs on the appropriate
+PIC, and the slave path then acknowledges master IRQ2. Other ISR bits
+are not cleared by these handlers. Guest-installed handlers and existing
+device-specific BIOS interrupt handlers remain unchanged.
+
+See Intel 82371AB PIIX4 datasheet section 4.2.2 and the 8259A default
+IR7 behavior, https://htmlapp.alldatasheet.com/html-pdf/66088/INTEL/82371AB/3139/24/82371AB.html.
+The host regression exercises all 256 ISR bitmaps for each vector:
+`cc -std=gnu11 -Wall -Wextra -Werror tests/pic-spurious-test.c -o pic-spurious-test`.
+It checks EOI port writes, not real interrupt delivery or ROM size.
+
 Rebuild the BIOS, cold boot the same machine, and verify the Windows
 Device Manager status and PCI IRQ steering. An existing Windows device
 record can persist even when firmware advertisement changes; do not

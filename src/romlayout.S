@@ -570,6 +570,8 @@ irqentry_arg:
         DECL_IRQ_ENTRY 75
         DECL_IRQ_ENTRY hwpic1
         DECL_IRQ_ENTRY hwpic2
+        DECL_IRQ_ENTRY hwpic7
+        DECL_IRQ_ENTRY hwpic15
 
         // int 18/19 are special - they reset stack and call into 32bit mode.
         DECLFUNC entry_19

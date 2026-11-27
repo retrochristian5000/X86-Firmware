@@ -46,6 +46,9 @@ ivt_init(void)
         SET_IVT(i, FUNC16(entry_hwpic1));
     for (i=BIOS_HWIRQ8_VECTOR; i<BIOS_HWIRQ8_VECTOR+8; i++)
         SET_IVT(i, FUNC16(entry_hwpic2));
+    // The last vector of each PIC also handles spurious acknowledgments.
+    SET_IVT(BIOS_HWIRQ0_VECTOR + 7, FUNC16(entry_hwpic7));
+    SET_IVT(BIOS_HWIRQ8_VECTOR + 7, FUNC16(entry_hwpic15));
 
     // Initialize software handlers.
     SET_IVT(0x02, FUNC16(entry_02));
