@@ -4,35 +4,40 @@ SDCC ?= sdcc
 MAKEBIN ?= makebin
 HOSTCC ?= cc
 HOSTCFLAGS ?= -O2
+BUILD_DIR ?= build
+OUT := $(abspath $(BUILD_DIR))
+SOURCE_DIR := $(CURDIR)
 ROM_SIZE := 8192
 MCUFLAGS := -mmcs51 --model-small --iram-size 256 --code-size $(ROM_SIZE)
 
 .PHONY: all check clean
-all: build/ct1741.bin
+all: $(OUT)/ct1741.bin
 
-build:
-	mkdir -p $@
+$(OUT):
+	mkdir -p "$@"
 
-build/command.rel: command.c command.h Makefile | build
-	cd build && $(SDCC) $(MCUFLAGS) -c ../command.c
+$(OUT)/command.rel: command.c command.h Makefile | $(OUT)
+	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -c "$(SOURCE_DIR)/command.c"
 
-build/main.rel: main.c command.h Makefile | build
-	cd build && $(SDCC) $(MCUFLAGS) -c ../main.c
+$(OUT)/main.rel: main.c command.h Makefile | $(OUT)
+	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -c "$(SOURCE_DIR)/main.c"
 
-build/ct1741.ihx: build/main.rel build/command.rel
-	cd build && $(SDCC) $(MCUFLAGS) -o ct1741.ihx main.rel command.rel
+$(OUT)/ct1741.ihx: $(OUT)/main.rel $(OUT)/command.rel
+	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -o ct1741.ihx main.rel command.rel
 
-build/ct1741.bin: build/ct1741.ihx
-	$(MAKEBIN) -s $(ROM_SIZE) < $< > $@.tmp
-	test "$$(wc -c < $@.tmp)" -eq $(ROM_SIZE)
-	mv $@.tmp $@
+$(OUT)/ct1741.bin: $(OUT)/ct1741.ihx
+	$(MAKEBIN) -s $(ROM_SIZE) < "$<" > "$@.tmp"
+	test "$$(wc -c < "$@.tmp")" -eq $(ROM_SIZE)
+	mv "$@.tmp" "$@"
 
-build/test-command: test-command.c command.c command.h Makefile | build
+$(OUT)/test-command: test-command.c command.c command.h Makefile | $(OUT)
 	$(HOSTCC) $(HOSTCFLAGS) -std=c99 -Wall -Wextra -Werror \
-	    -o $@ test-command.c command.c
+	    -o "$@" test-command.c command.c
 
-check: build/test-command
-	./build/test-command
+check: $(OUT)/test-command
+	"$(OUT)/test-command"
 
 clean:
-	rm -rf build
+	# Custom output directories are owned and cleaned by the caller.
+	@test "$(OUT)" = "$(CURDIR)/build" || { printf '%s\n' 'error: clean only supports the default CT1741 build directory' >&2; exit 1; }
+	rm -rf -- "$(CURDIR)/build"

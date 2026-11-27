@@ -12,6 +12,11 @@ Install SDCC with its MCS-51 backend and makebin. From the repository root:
     make -C firmware/ct1741 check
     make -C firmware/ct1741
 
+For an out-of-tree provider build, pass `BUILD_DIR=/absolute/output/path`.
+The caller owns that directory; `clean` only removes the default local
+`build` directory. The provider may use a fresh output directory to avoid
+reusing objects compiled by a different SDCC installation.
+
 The host tests need only a C99 compiler. The MCU build produces
 `firmware/ct1741/build/ct1741.bin`, an exactly 8192-byte image, plus
 SDCC's Intel HEX and linker reports. The linker is constrained to 8192
