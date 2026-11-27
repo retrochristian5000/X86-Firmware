@@ -21,6 +21,10 @@ def select_profile(config, variant="auto", compact=False):
             variant = "csm"
         elif config.get("CONFIG_COREBOOT"):
             variant = "coreboot"
+        elif config.get("CONFIG_QEMU") and size in (128, 256):
+            # The size selects the standard placement policy, not a machine
+            # identity. Specialized profiles must still be requested explicitly.
+            variant = "seabios-%dk" % size
         else:
             variant = "generic"
     expected = {"seabios-128k": 128, "seabios-256k": 256,

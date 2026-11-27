@@ -872,6 +872,8 @@ def main():
         profile = select_profile(config, variant, compact == '1')
     except ValueError as error:
         sys.exit('Error: %s' % error)
+    print("ROM layout: %s (requested: %s, compact init text: %d)" %
+          (profile.name, variant, profile.compact_init_text))
 
     # Figure out which sections to keep.
     allsections = info16[0] + info32seg[0] + info32flat[0]

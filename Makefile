@@ -282,6 +282,8 @@ $(OUT)code16.o: $(OUT)ccode16.o $(OUT)romlayout.o
 	$(Q)$(LD) $(LD32BIT_FLAG) -r $^ -o $@
 
 # Track placement policy without recompiling unchanged firmware inputs.
+# Auto selects the standard QEMU layout for a fixed 128 or 256 KiB ROM.
+# Specialized machine layouts and optional text packing remain explicit.
 ROM_LAYOUT_VARIANT ?= auto
 ROM_LAYOUT_PACK ?= 0
 $(OUT)romlayout.profile: FORCE

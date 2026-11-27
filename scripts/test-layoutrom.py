@@ -102,6 +102,33 @@ class SectionPlacementTests(unittest.TestCase):
 
 
 class VariantLayoutTests(unittest.TestCase):
+    def test_auto_selects_standard_qemu_layout_by_fixed_capacity(self):
+        for size, name in ((0, 'generic'), (64, 'generic'),
+                           (128, 'seabios-128k'), (256, 'seabios-256k'),
+                           (512, 'generic')):
+            with self.subTest(size=size):
+                cfg = {'CONFIG_QEMU': 1, 'CONFIG_ROM_SIZE': size}
+                profile = layoutrom.select_profile(cfg)
+                self.assertEqual(profile.name, name)
+                self.assertEqual(profile.min_biostable, 2048)
+                self.assertFalse(profile.compact_init_text)
+                self.assertEqual(profile, layoutrom.select_profile(cfg, name))
+                if size == 128:
+                    self.assertTrue(layoutrom.select_profile(
+                        cfg, compact=True).compact_init_text)
+                else:
+                    with self.assertRaises(ValueError):
+                        layoutrom.select_profile(cfg, compact=True)
+
+    def test_auto_preserves_non_qemu_entry_variants(self):
+        for config, name in (({'CONFIG_COREBOOT': 1}, 'coreboot'),
+                             ({'CONFIG_COREBOOT': 1,
+                               'CONFIG_MULTIBOOT': 1}, 'multiboot'),
+                             ({'CONFIG_CSM': 1}, 'csm')):
+            with self.subTest(name=name):
+                self.assertEqual(layoutrom.select_profile(
+                    dict(config, CONFIG_ROM_SIZE=128)).name, name)
+
     def test_profiles_keep_128k_variants_distinct(self):
         cfg = {'CONFIG_QEMU': 1, 'CONFIG_ROM_SIZE': 128}
         for name in ('seabios-128k', 'seabios-microvm'):
