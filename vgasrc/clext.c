@@ -13,6 +13,7 @@
 #include "output.h" // dprintf
 #include "std/vbe.h" // VBE_RETURN_STATUS_FAILED
 #include "stdvga.h" // VGAREG_SEQU_ADDRESS
+#include "clext-ddc.h" // clext_ddc_read
 #include "string.h" // memset16_far
 #include "vgabios.h" // SET_VGA
 #include "vgautil.h" // VBE_total_memory
@@ -668,6 +669,16 @@ clext_setup(void)
     u16 totalmem = cirrus_get_memsize();
     SET_VGA(VBE_total_memory, totalmem * 64 * 1024);
     SET_VGA(VBE_win_granularity, 16);
+
+    // Publish only an EDID actually returned by the connected monitor.
+    if ((stdvga_crtc_read(stdvga_get_crtc(), 0x27) & 0xfc) == 0xb8) {
+        u8 edid[128];
+        int i;
+        if (!clext_ddc_read(edid)) {
+            for (i = 0; i < sizeof(edid); i++)
+                SET_VGA(VBE_edid[i], edid[i]);
+        }
+    }
 
     return 0;
 }
