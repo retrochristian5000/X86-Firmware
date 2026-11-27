@@ -58,6 +58,8 @@ DIRS=src src/hw src/fw vgasrc
 # Configuration-only commands do not need a working firmware toolchain.
 config-only := $(if $(MAKECMDGOALS),$(if $(filter-out %onfig menuconfig-build help,$(MAKECMDGOALS)),,y))
 
+include $(dir $(lastword $(MAKEFILE_LIST)))scripts/cpu-profile.mk
+
 # Default compiler flags
 cc-option=$(shell if test -z "`$(1) $(2) -S -o /dev/null -xc /dev/null 2>&1`" \
     ; then echo "$(2)"; else echo "$(3)"; fi ;)
@@ -69,7 +71,7 @@ CPPFLAGS = -P -MD -MT $@
 COMMONCFLAGS := -I$(OUT) -Isrc -Os -MD -g \
     -Wall -Wno-strict-aliasing -Wold-style-definition \
     $(call cc-option,$(CC),-Wtype-limits,) \
-    -m32 -march=i386 -mregparm=3 -mpreferred-stack-boundary=2 \
+    -m32 $(BIOS_CPU_CFLAGS) -mregparm=3 -mpreferred-stack-boundary=2 \
     -minline-all-stringops -fomit-frame-pointer \
     -freg-struct-return -ffreestanding -fno-delete-null-pointer-checks \
     -ffunction-sections -fdata-sections -fno-common -fno-merge-constants
@@ -132,7 +134,7 @@ endif
 # Require successful code generation, not just driver acceptance.  Reject
 # unsupported experiments instead of silently reporting baseline results.
 rom-flat-probe := $(shell printf '%s\n' 'int rom_size_probe(int x) { return x + 1; }' | \
-    $(CC) -m32 -march=i386 -ffreestanding -Os -Werror $(ROM_FLAT_SIZE_CFLAGS) \
+    $(CC) -m32 $(BIOS_CPU_CFLAGS) -ffreestanding -Os -Werror $(ROM_FLAT_SIZE_CFLAGS) \
     -x c -c - -o /dev/null >/dev/null 2>&1 && printf '%s' yes)
 ifneq ($(rom-flat-probe),yes)
 $(error Compiler cannot generate i386 code with $(ROM_FLAT_SIZE_CFLAGS))
@@ -180,11 +182,18 @@ endef
 	$(Q)$(STRIP) $< -o $<.strip.o
 	$(Q)$(PYTHON) ./scripts/ldnoexec.py $<.strip.o $@
 
-$(OUT)%.s: %.c
+# Changing CPU flags must invalidate every generated C/assembly object.
+$(OUT)bios-cpu.profile: FORCE
+	$(Q)set -eu; umask 077; mkdir -p "$(OUT)"; tmp=$(mktemp "$@.XXXXXX"); \
+		trap 'rm -f "$tmp"' 0; trap 'exit 1' HUP INT TERM; \
+		printf '%s\n' "$(BIOS_CPU)" "$(BIOS_CPU_CFLAGS)" > "$tmp"; \
+		if ! cmp -s "$tmp" "$@"; then mv "$tmp" "$@"; fi
+
+$(OUT)%.s: %.c $(OUT)bios-cpu.profile
 	@echo "  Compiling to assembler $@"
 	$(Q)$(CC) $(CFLAGS16) -S -c $< -o $@
 
-$(OUT)%.o: %.c $(OUT)autoconf.h
+$(OUT)%.o: %.c $(OUT)autoconf.h $(OUT)bios-cpu.profile
 	@echo "  Compile checking $@"
 	$(Q)$(CC) $(CFLAGS32FLAT) -c $< -o $@
 
@@ -208,9 +217,9 @@ $(OUT)asm-offsets.h: $(OUT)src/asm-offsets.s
 	@echo "  Generating offset file $@"
 	$(Q)./scripts/gen-offsets.sh $< $@
 
-$(OUT)ccode16.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC16)) ; $(call whole-compile, $(CFLAGS16), $(addprefix src/, $(SRC16)),$@)
+$(OUT)ccode16.o: $(OUT)autoconf.h $(OUT)bios-cpu.profile $(patsubst %.c, $(OUT)src/%.o,$(SRC16)) ; $(call whole-compile, $(CFLAGS16), $(addprefix src/, $(SRC16)),$@)
 
-$(OUT)code32seg.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)src/%.o,$(SRC32SEG)) ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
+$(OUT)code32seg.o: $(OUT)autoconf.h $(OUT)bios-cpu.profile $(patsubst %.c, $(OUT)src/%.o,$(SRC32SEG)) ; $(call whole-compile, $(CFLAGS32SEG), $(addprefix src/, $(SRC32SEG)),$@)
 
 # Track the selected flat compiler flags independently of the linker profile.
 $(OUT)rom-flat-cflags.profile: FORCE
@@ -220,9 +229,9 @@ $(OUT)rom-flat-cflags.profile: FORCE
 		printf '%s\n' "$(ROM_FLAT_SIZE_PROFILE)" "$(ROM_FLAT_SIZE_CFLAGS)" > "$$tmp"; \
 		if ! cmp -s "$$tmp" "$@"; then mv "$$tmp" "$@"; fi
 
-$(OUT)ccode32flat.o: $(OUT)autoconf.h $(OUT)rom-flat-cflags.profile $(patsubst %.c, $(OUT)src/%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT) $(ROM_FLAT_SIZE_CFLAGS), $(addprefix src/, $(SRC32FLAT)),$@)
+$(OUT)ccode32flat.o: $(OUT)autoconf.h $(OUT)bios-cpu.profile $(OUT)rom-flat-cflags.profile $(patsubst %.c, $(OUT)src/%.o,$(SRC32FLAT)) ; $(call whole-compile, $(CFLAGS32FLAT) $(ROM_FLAT_SIZE_CFLAGS), $(addprefix src/, $(SRC32FLAT)),$@)
 
-$(OUT)romlayout.o: src/romlayout.S $(OUT)autoconf.h $(OUT)asm-offsets.h
+$(OUT)romlayout.o: src/romlayout.S $(OUT)autoconf.h $(OUT)bios-cpu.profile $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
 	$(Q)$(CC) $(CFLAGS16) -c -D__ASSEMBLY__ $< -o $@
 
@@ -327,17 +336,17 @@ SRCVGA=src/output.c src/string.c src/hw/pci.c src/hw/serialio.c \
     src/fw/coreboot.c vgasrc/cbvga.c vgasrc/bochsdisplay.c vgasrc/ramfb.c
 
 ifeq "$(CONFIG_VGA_FIXUP_ASM)" "y"
-$(OUT)vgaccode16.raw.s: $(OUT)autoconf.h $(patsubst %.c, $(OUT)%.o,$(SRCVGA)) ; $(call whole-compile, $(filter-out -fomit-frame-pointer,$(CFLAGS16)) -fno-omit-frame-pointer -S -Isrc, $(SRCVGA),$@)
+$(OUT)vgaccode16.raw.s: $(OUT)autoconf.h $(OUT)bios-cpu.profile $(patsubst %.c, $(OUT)%.o,$(SRCVGA)) ; $(call whole-compile, $(filter-out -fomit-frame-pointer,$(CFLAGS16)) -fno-omit-frame-pointer -S -Isrc, $(SRCVGA),$@)
 
 $(OUT)vgaccode16.o: $(OUT)vgaccode16.raw.s scripts/vgafixup.py
 	@echo "  Fixup VGA rom assembler"
 	$(Q)$(PYTHON) ./scripts/vgafixup.py $< $(OUT)vgaccode16.s
 	$(Q)$(AS) --32 src/code16gcc.s $(OUT)vgaccode16.s -o $@
 else
-$(OUT)vgaccode16.o: $(OUT)autoconf.h $(patsubst %.c, $(OUT)%.o,$(SRCVGA)) ; $(call whole-compile, $(CFLAGS16) -Isrc, $(SRCVGA),$@)
+$(OUT)vgaccode16.o: $(OUT)autoconf.h $(OUT)bios-cpu.profile $(patsubst %.c, $(OUT)%.o,$(SRCVGA)) ; $(call whole-compile, $(CFLAGS16) -Isrc, $(SRCVGA),$@)
 endif
 
-$(OUT)vgaentry.o: vgasrc/vgaentry.S $(OUT)autoconf.h $(OUT)asm-offsets.h
+$(OUT)vgaentry.o: vgasrc/vgaentry.S $(OUT)autoconf.h $(OUT)bios-cpu.profile $(OUT)asm-offsets.h
 	@echo "  Compiling (16bit) $@"
 	$(Q)$(CC) $(CFLAGS16) -c -D__ASSEMBLY__ $< -o $@
 
