@@ -182,12 +182,22 @@ endef
 	$(Q)$(STRIP) $< -o $<.strip.o
 	$(Q)$(PYTHON) ./scripts/ldnoexec.py $<.strip.o $@
 
-# Changing CPU flags must invalidate every generated C/assembly object.
+# Track effective firmware compilation settings, not just the CPU profile.
+# Mixed 16-bit and 32-bit objects can otherwise survive a compiler/ABI change.
+profile-quote = '$(subst ','"'"',$(1))'
 $(OUT)bios-cpu.profile: FORCE
-	$(Q)set -eu; umask 077; mkdir -p "$(OUT)"; tmp=$$(mktemp "$@.XXXXXX"); \
-		trap 'rm -f "$$tmp"' 0; trap 'exit 1' HUP INT TERM; \
-		printf '%s\n' "$(BIOS_CPU)" "$(BIOS_CPU_CFLAGS)" > "$$tmp"; \
-		if ! cmp -s "$$tmp" "$@"; then mv "$$tmp" "$@"; fi
+	$(Q)set -eu; umask 077; mkdir -p "$(OUT)"; tmp=$(mktemp "$@.XXXXXX"); \
+		trap 'rm -f "$tmp"' 0; trap 'exit 1' HUP INT TERM; \
+		printf '%s\n' \
+			$(call profile-quote,BIOS_CPU=$(BIOS_CPU)) \
+			$(call profile-quote,BIOS_CPU_CFLAGS=$(BIOS_CPU_CFLAGS)) \
+			$(call profile-quote,CC=$(CC)) \
+			$(call profile-quote,AS=$(AS)) \
+			$(call profile-quote,CFLAGS16=$(CFLAGS16)) \
+			$(call profile-quote,CFLAGS32SEG=$(CFLAGS32SEG)) \
+			$(call profile-quote,CFLAGS32FLAT=$(CFLAGS32FLAT)) \
+			$(call profile-quote,CFLAGSWHOLE=$(CFLAGSWHOLE)) > "$tmp"; \
+		if ! cmp -s "$tmp" "$@"; then mv "$tmp" "$@"; fi
 
 $(OUT)%.s: %.c $(OUT)bios-cpu.profile
 	@echo "  Compiling to assembler $@"
