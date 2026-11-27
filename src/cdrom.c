@@ -308,40 +308,40 @@ cdrom_media_info(struct drive_s *drive)
     memset(&dop, 0, sizeof(dop));
     dop.drive_fl = drive;
 
-    int ret = scsi_is_ready(&dop);
+    // The volume label is optional: never run the extended spin-up loop
+    // just to decorate a boot-menu entry.
+    int ret = scsi_is_ready_now(&dop);
     if (ret)
         return NULL;
 
-    // Read the Boot Record Volume Descriptor
-    u8 buffer[CDROM_SECTOR_SIZE];
-    dop.command = CMD_READ;
-    dop.lba = 0x11;
-    dop.count = 1;
-    dop.buf_fl = buffer;
-    ret = process_op(&dop);
-    if (ret || dop.count != 1)
+    // The primary and boot record descriptors are adjacent on this layout.
+    // Fetch both in one command, without increasing the firmware stack.
+    u8 *buffer = malloc_tmp(2 * CDROM_SECTOR_SIZE);
+    if (!buffer)
         return NULL;
-
-    // Is it bootable?
-    if (buffer[0])
-        return NULL;
-    if (strcmp((char*)&buffer[1], "CD001\001EL TORITO SPECIFICATION") != 0)
-        return NULL;
-
-    // Read the Primary Volume Descriptor
+    char *volume = NULL;
     dop.command = CMD_READ;
     dop.lba = 0x10;
-    dop.count = 1;
+    dop.count = 2;
     dop.buf_fl = buffer;
     ret = process_op(&dop);
-    if (ret || dop.count != 1)
-        return NULL;
+    if (ret || dop.count != 2)
+        goto done;
+
+    u8 *bootrec = buffer + CDROM_SECTOR_SIZE;
+    if (bootrec[0] ||
+        memcmp(bootrec + 1, "CD001\001EL TORITO SPECIFICATION",
+               sizeof("CD001\001EL TORITO SPECIFICATION")))
+        goto done;
+    if (memcmp(buffer, "\001CD001\001", 7))
+        goto done;
 
     // The ISO 9660 volume identifier occupies exactly 32 bytes.
-    // Do not scan the following descriptor fields as part of the label.
     buffer[40 + 32] = 0;
-    char *volume = znprintf(30, "%s", buffer + 40);
+    volume = znprintf(33, "%s", buffer + 40);
     if (volume)
         nullTrailingSpace(volume);
+done:
+    free(buffer);
     return volume;
 }
