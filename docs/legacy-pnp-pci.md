@@ -46,6 +46,22 @@ The host regression is `tests/pci-bar-probe-test.c`; build with
 `cc -std=gnu11 -Wall -Wextra -Werror -Isrc tests/pci-bar-probe-test.c -o pci-bar-probe-test`.
 It uses mocked configuration accesses, not live hardware.
 
+Legacy DMA POST initialization resets DMA2 before DMA1 to close the
+cascade while configuring both controllers. All seven peripheral
+channels receive the demand/verify, incrementing, non-autoinitializing
+mode (the PIIX4 reset defaults); system channel 4 receives cascade
+mode and is the only channel unmasked. Address, count and page
+registers are not initialized by POST because peripheral drivers must
+program them before unmasking their channels. The floppy DMA transfer
+and completion paths are unchanged.
+
+See Intel 82371AB PIIX4 datasheet sections 4.2.1.2 and 4.2.1.7-11.
+The host test `tests/dma-init-test.c` checks the exact port write
+sequence twice, without performing live DMA. Build with
+`cc -std=gnu11 -Wall -Wextra -Werror tests/dma-init-test.c -o dma-init-test`.
+This does not change the PnP BIOS inventory or provide PC/PCI or
+distributed DMA services.
+
 Rebuild the BIOS, cold boot the same machine, and verify the Windows
 Device Manager status and PCI IRQ steering. An existing Windows device
 record can persist even when firmware advertisement changes; do not
