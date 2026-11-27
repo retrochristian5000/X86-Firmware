@@ -167,6 +167,14 @@ scsi_is_read(struct disk_op_s *op)
         !MODESEGMENT && op->command == CMD_SCSI && op->blocksize);
 }
 
+// A single probe for optional media information; do not wait for spin-up.
+int
+scsi_is_ready_now(struct disk_op_s *op)
+{
+    ASSERT32FLAT();
+    return cdb_test_unit_ready(op);
+}
+
 // Check if a SCSI device is ready to receive commands
 int
 scsi_is_ready(struct disk_op_s *op)
@@ -193,9 +201,11 @@ scsi_is_ready(struct disk_op_s *op)
 
         struct cdbres_request_sense sense;
         ret = cdb_get_sense(op, &sense);
-        if (ret)
-            // Error - retry.
+        if (ret || op->count != 1) {
+            // Avoid flooding an unresponsive controller with sense commands.
+            msleep(10);
             continue;
+        }
 
         // Sense succeeded.
         if (sense.asc == 0x3a) { /* MEDIUM NOT PRESENT */
@@ -204,14 +214,21 @@ scsi_is_ready(struct disk_op_s *op)
                 tries);
             if (!tries)
                 return -1;
+            continue;
         }
 
-        if (sense.asc == 0x04 && sense.ascq == 0x01 && !in_progress) {
+        if (sense.asc == 0x04 && sense.ascq == 0x01) {
             /* IN PROGRESS OF BECOMING READY */
-            dprintf(1, "Waiting for device to detect medium... ");
-            /* Allow 30 seconds more */
-            end = timer_calc(30000);
-            in_progress = 1;
+            if (!in_progress) {
+                dprintf(1, "Waiting for device to detect medium...\n");
+                /* Preserve the existing extended readiness window. */
+                end = timer_calc(30000);
+                in_progress = 1;
+            }
+            msleep(100);
+        } else if ((sense.flags & 0x0f) != 0x06) {
+            // Unit attention can clear immediately; other failures back off.
+            msleep(10);
         }
     }
     return 0;
