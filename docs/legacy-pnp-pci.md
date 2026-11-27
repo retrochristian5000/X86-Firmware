@@ -31,6 +31,21 @@ the existing six root-bus slot mappings. Q35 and unknown routers
 do not receive this PIIX-specific fallback table. Imported tables
 must use version 1.0 and complete 16-byte routing entries.
 
+During PCI initialization, BAR sizing and assignment temporarily clear
+the I/O and memory decode bits using a 16-bit Command register access.
+Both halves of a 64-bit BAR are probed before either mask is read.
+The original BAR values are restored before the original Command value;
+an already-disabled device is left disabled. This preserves unrelated
+Command bits and avoids writing the adjacent write-one-to-clear Status
+register. The same decode guard covers expansion ROM BAR sizing.
+The allocator's existing resource limits and VGA selection policy are
+unchanged; bridge-window programming and multi-adapter routing require
+separate validation.
+
+The host regression is `tests/pci-bar-probe-test.c`; build with
+`cc -std=gnu11 -Wall -Wextra -Werror -Isrc tests/pci-bar-probe-test.c -o pci-bar-probe-test`.
+It uses mocked configuration accesses, not live hardware.
+
 Rebuild the BIOS, cold boot the same machine, and verify the Windows
 Device Manager status and PCI IRQ steering. An existing Windows device
 record can persist even when firmware advertisement changes; do not
