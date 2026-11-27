@@ -743,12 +743,12 @@ pci_bios_get_bar(struct pci_device *pci, int bar,
     u64 val = pci_bar_probe_mask(bdf, ofs,
                                 bar == PCI_ROM_SLOT ? (u32)mask : ~0U,
                                 is64);
-    if (is64) {
+    if (is64)
         mask |= ((u64)0xffffffff << 32);
-        *psize = (~(val & mask)) + 1;
-    } else {
-        *psize = ((~(val & mask)) + 1) & 0xffffffff;
-    }
+    *psize = pci_bar_size(val, mask, is64);
+    if (!*psize && (val & mask))
+        dprintf(1, "PCI: ignoring invalid BAR size at %pP offset %x\n"
+                , pci, ofs);
     *ptype = type;
     *pis64 = is64;
 }
@@ -940,8 +940,13 @@ static int pci_bios_check_devices(struct pci_bus *busses)
             int type, is64;
             u64 size;
             pci_bios_get_bar(pci, i, &type, &size, &is64);
-            if (size == 0)
+            if (size == 0) {
+                // The upper half is never an independent BAR, even if
+                // the size mask was invalid or the region was absent.
+                if (is64)
+                    i++;
                 continue;
+            }
             sized_bars++;
 
             if (type != PCI_REGION_TYPE_IO && size < PCI_DEVICE_MEM_MIN)

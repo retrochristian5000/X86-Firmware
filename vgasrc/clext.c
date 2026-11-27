@@ -7,6 +7,7 @@
 
 #include "biosvar.h" // GET_GLOBAL
 #include "clext-address.h" // cirrus_start_decode
+#include "clext-pci.h" // cirrus_pci_framebuffer
 #include "bregs.h" // struct bregs
 #include "hw/pci.h" // pci_config_readl
 #include "hw/pci_regs.h" // PCI_BASE_ADDRESS_0
@@ -666,9 +667,18 @@ clext_setup(void)
 
     u32 lfb_addr = 0;
     int bdf = GET_GLOBAL(VgaBDF);
-    if (CONFIG_VGA_PCI && bdf >= 0)
-        lfb_addr = (pci_config_readl(bdf, PCI_BASE_ADDRESS_0)
-                    & PCI_BASE_ADDRESS_MEM_MASK);
+    if (CONFIG_VGA_PCI && bdf >= 0) {
+        // Read the assigned BAR without probing or changing PCI decoding.
+        lfb_addr = cirrus_pci_framebuffer(
+            pci_config_readw(bdf, PCI_VENDOR_ID),
+            pci_config_readw(bdf, PCI_DEVICE_ID),
+            pci_config_readw(bdf, PCI_CLASS_DEVICE),
+            pci_config_readb(bdf, PCI_HEADER_TYPE),
+            pci_config_readw(bdf, PCI_COMMAND),
+            pci_config_readl(bdf, PCI_BASE_ADDRESS_0));
+        if (!lfb_addr)
+            dprintf(1, "Cirrus PCI: framebuffer unavailable; using banked VGA\n");
+    }
     SET_VGA(VBE_framebuffer, lfb_addr);
     u16 totalmem = cirrus_get_memsize();
     SET_VGA(VBE_total_memory, totalmem * 64 * 1024);
