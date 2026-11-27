@@ -969,24 +969,24 @@ static int handle_exit(void)
 	switch (res) {
 	case 0:
 		if (conf_write(filename)) {
-			fprintf(stderr, _("\n\n"
+			fputs(_("\n\n"
 					  "Error while writing of the configuration.\n"
 					  "Your configuration changes were NOT saved."
-					  "\n\n"));
+					  "\n\n"), stderr);
 			return 1;
 		}
 		/* fall through */
 	case -1:
-		printf(_("\n\n"
+		fputs(_("\n\n"
 			 "*** End of the configuration.\n"
 			 "*** Execute 'make' to start the build or try 'make help'."
-			 "\n\n"));
+			 "\n\n"), stdout);
 		res = 0;
 		break;
 	default:
-		fprintf(stderr, _("\n\n"
+		fputs(_("\n\n"
 				  "Your configuration changes were NOT saved."
-				  "\n\n"));
+				  "\n\n"), stderr);
 		if (res != KEY_ESC)
 			res = 0;
 	}
