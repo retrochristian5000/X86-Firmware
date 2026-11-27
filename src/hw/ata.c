@@ -457,27 +457,30 @@ ata_dma_transfer(struct disk_op_s *op)
     u8 oldcmd = inb(iomaster + BM_CMD);
     outb(oldcmd | BM_CMD_START, iomaster + BM_CMD);
 
-    // A bus-master error can stop DMA without raising an interrupt.
-    // Also avoid timer setup when the controller has already finished.
+    // PIIX4 table 15: ACTIVE alone indicates an in-progress transfer.
+    // Inactive without IRQ indicates an exhausted or failed PRD table.
     u8 status = inb(iomaster + BM_STATUS);
-    if (!(status & (BM_STATUS_IRQ | BM_STATUS_ERROR))) {
+    const u8 mask = BM_STATUS_ACTIVE | BM_STATUS_IRQ | BM_STATUS_ERROR;
+    if ((status & mask) == BM_STATUS_ACTIVE) {
         u32 end = timer_calc(IDE_TIMEOUT);
-        for (;;) {
+        do {
             if (timer_check(end)) {
                 warn_timeout();
                 break;
             }
             yield();
             status = inb(iomaster + BM_STATUS);
-            if (status & (BM_STATUS_IRQ | BM_STATUS_ERROR))
-                break;
-        }
+        } while ((status & mask) == BM_STATUS_ACTIVE);
     }
     outb(oldcmd & ~BM_CMD_START, iomaster + BM_CMD);
 
     u16 iobase1 = GET_GLOBALFLAT(chan_gf->iobase1);
     u16 iobase2 = GET_GLOBALFLAT(chan_gf->iobase2);
-    int idestatus = pause_await_not_bsy(iobase1, iobase2);
+    // A failed or timed-out DMA must not start a second full busy wait.
+    // Read regular status to acknowledge any outstanding device IRQ.
+    int idestatus = (status & mask) == BM_STATUS_IRQ
+        ? pause_await_not_bsy(iobase1, iobase2)
+        : inb(iobase1 + ATA_CB_STAT);
 
     if ((status & (BM_STATUS_IRQ | BM_STATUS_ACTIVE | BM_STATUS_ERROR))
         == BM_STATUS_IRQ
