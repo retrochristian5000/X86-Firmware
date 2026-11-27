@@ -6,15 +6,13 @@
 
 #include "biosvar.h" // GET_GLOBALFLAT
 #include "block.h" // struct drive_s
-#include "bregs.h" // struct bregs
 #include "e820map.h" // e820_add
 #include "malloc.h" // memalign_tmphigh
 #include "memmap.h" // PAGE_SIZE
 #include "output.h" // dprintf
 #include "romfile.h" // romfile_findprefix
-#include "stacks.h" // call16_int
 #include "std/disk.h" // DISK_RET_SUCCESS
-#include "string.h" // memset
+#include "string.h" // memcpy
 #include "util.h" // process_ramdisk_op
 
 void
@@ -54,40 +52,42 @@ ramdisk_setup(void)
     if (!drive)
         return;
     drive->type = DTYPE_RAMDISK;
+    drive->sectors = size / DISK_SECTOR_SIZE;
     dprintf(1, "Mapping floppy %s to addr %p\n", filename, pos);
     char *desc = znprintf(MAXDESCSIZE, "Ramdisk [%s]", &filename[10]);
     boot_add_floppy(drive, desc, bootprio_find_named_rom(filename, 0));
 }
 
+// The RAM disk is already in guest memory.  Use the normal flat-mode
+// disk dispatcher instead of nesting an INT 15h block-move service.
 static int
 ramdisk_copy(struct disk_op_s *op, int iswrite)
 {
-    u32 offset = GET_GLOBALFLAT(op->drive_fl->cntl_id);
-    offset += (u32)op->lba * DISK_SECTOR_SIZE;
-    u64 opd = GDT_DATA | GDT_LIMIT(0xfffff) | GDT_BASE((u32)op->buf_fl);
-    u64 ramd = GDT_DATA | GDT_LIMIT(0xfffff) | GDT_BASE(offset);
+    ASSERT32FLAT();
+    if (!op->count)
+        return DISK_RET_SUCCESS;
+    u64 sectors = op->drive_fl->sectors;
+    if (op->lba >= sectors || op->count > sectors - op->lba)
+        return DISK_RET_EADDRNOTFOUND;
 
-    u64 gdt[6];
-    if (iswrite) {
-        gdt[2] = opd;
-        gdt[3] = ramd;
-    } else {
-        gdt[2] = ramd;
-        gdt[3] = opd;
-    }
+    u32 bytes = (u32)op->count * DISK_SECTOR_SIZE;
+    u32 base = op->drive_fl->cntl_id;
+    u32 buf = (u32)op->buf_fl;
+    u64 addr = (u64)base + op->lba * DISK_SECTOR_SIZE;
+    // Keep the disk request limit and reject wraparound in either range.
+    if (bytes > 64 * 1024 || !buf ||
+        addr + bytes > (1ULL << 32) || (u64)buf + bytes > (1ULL << 32))
+        return DISK_RET_EBOUNDARY;
 
-    // Call int 1587 to copy data.
-    struct bregs br;
-    memset(&br, 0, sizeof(br));
-    br.flags = F_CF|F_IF;
-    br.ah = 0x87;
-    br.es = GET_SEG(SS);
-    br.si = (u32)gdt;
-    br.cx = op->count * DISK_SECTOR_SIZE / 2;
-    call16_int(0x15, &br);
+    // An overlapping buffer is not a valid independent disk-transfer area.
+    if ((u64)buf < addr + bytes && addr < (u64)buf + bytes)
+        return DISK_RET_EBOUNDARY;
 
-    if (br.flags & F_CF)
-        return DISK_RET_EBADTRACK;
+    void *disk = (void *)(u32)addr;
+    if (iswrite)
+        memcpy(disk, op->buf_fl, bytes);
+    else
+        memcpy(op->buf_fl, disk, bytes);
     return DISK_RET_SUCCESS;
 }
 
