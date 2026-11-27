@@ -44,40 +44,33 @@ pci_mem32_window(const struct e820entry *map, int count, u64 lo, u64 hi,
     if (hi > 0x100000000ULL || lo >= hi || count < 0)
         return -1;
 
-    // Validate the map before relying on reverse gap traversal.
-    u64 previous_end = 0;
-    for (int i = 0; i < count; i++) {
-        u64 start = map[i].start, size = map[i].size;
-        if (!size)
-            continue;
-        if (start < previous_end || size > ~0ULL - start)
-            return -1;
-        previous_end = start + size;
-    }
-
-    u64 best = 0, end = hi;
-    struct pci_mem_window candidate;
-    for (int i = count - 1; i >= 0 && end > lo; i--) {
-        u64 start = map[i].start, size = map[i].size;
-        if (!size || start >= end)
-            continue;
-        u64 used_end = start + size;
-        if (used_end <= lo)
-            break;
-        if (used_end < end
-            && end - used_end > best
-            && !pci_mem_pack(used_end, end, lower_size, lower_align,
-                             upper_size, upper_align, &candidate)) {
-            best = end - used_end;
-            *out = candidate;
+    // Walk backwards once, validating all nonempty entries even outside
+    // the candidate aperture. The final iteration visits the bottom gap.
+    u64 best = 0, end = hi, previous_start = ~0ULL;
+    for (int i = count; i >= 0; ) {
+        u64 start = 0, used_end = lo;
+        if (i) {
+            --i;
+            start = map[i].start;
+            u64 size = map[i].size;
+            if (!size)
+                continue;
+            if (start > previous_start || size > previous_start - start)
+                return -1;
+            previous_start = start;
+            used_end = start + size;
+            if (start >= end)
+                continue;
+            if (used_end < lo)
+                used_end = lo;
+        } else {
+            i = -1;
         }
+        if (used_end < end && end - used_end > best
+            && !pci_mem_pack(used_end, end, lower_size, lower_align,
+                             upper_size, upper_align, out))
+            best = end - used_end;
         end = start;
-    }
-    if (end > lo && end - lo > best
-        && !pci_mem_pack(lo, end, lower_size, lower_align,
-                         upper_size, upper_align, &candidate)) {
-        best = end - lo;
-        *out = candidate;
     }
     return best ? 0 : -1;
 }

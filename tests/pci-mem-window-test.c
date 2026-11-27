@@ -48,5 +48,21 @@ int main(void)
     const struct e820entry wrap[] = {{~0ULL - M, 2 * M, E820_RESERVED}};
     CHECK(pci_mem32_window(overlap, 2, 16 * M, 64 * M, M, M, M, M, &w));
     CHECK(pci_mem32_window(wrap, 1, 16 * M, 64 * M, M, M, M, M, &w));
+    // Equal-size gaps prefer the higher address. Empty entries do not
+    // affect the traversal; malformed entries outside the window fail.
+    const struct e820entry tie[] = {
+        {32 * M, 16 * M, E820_RESERVED},
+        {49 * M, 0, E820_RESERVED},
+    };
+    CHECK(!pci_mem32_window(tie, 2, 16 * M, 64 * M, M, M, M, M, &w));
+    CHECK(w.start == 48 * M && w.end == 64 * M);
+    const struct e820entry outside[] = {
+        {16 * M, M, E820_RAM},
+        {128 * M, 16 * M, E820_RAM},
+        {129 * M, M, E820_RESERVED},
+    };
+    CHECK(pci_mem32_window(outside, 3, 16 * M, 64 * M, M, M, M, M, &w));
+    CHECK(!pci_mem32_window(0, 0, 16 * M, 64 * M, M, M, M, M, &w));
+    CHECK(w.start == 16 * M && w.end == 64 * M);
     return 0;
 }
