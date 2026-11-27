@@ -333,7 +333,7 @@ static void intel_igd_setup(struct pci_device *dev, void *arg)
 
         pci_config_writel(dev->bdf, 0x5C, cpu_to_le32((u32)addr));
 
-        dprintf(1, "Intel IGD BDSM enabled at 0x%08x, size %lldMB, dev %pP\n"
+        dprintf(1, "Intel IGD BDSM enabled at 0x%08x, size %lluMB, dev %pP\n"
                 , (u32)addr, bdsm_size >> 20, dev);
     }
 }
@@ -641,7 +641,9 @@ pci_bios_init_bus_rec(int bus, u8 *pci_bus)
 
         if (*pci_bus == 0xff) {
             // The first pass left this bridge's forwarding window closed.
-            dprintf(1, "PCI: no bus numbers left for bridge %pP\n", bdf);
+            dprintf(1, "PCI: no bus numbers left for bridge %02x:%02x.%x\n"
+                    , pci_bdf_to_bus(bdf), pci_bdf_to_dev(bdf)
+                    , pci_bdf_to_fn(bdf));
             continue;
         }
 
