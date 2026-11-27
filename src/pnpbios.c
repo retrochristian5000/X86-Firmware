@@ -122,9 +122,14 @@ void
 pnp_runtime_setup(void)
 {
 #if CONFIG_PNPBIOS_RUNTIME && !MODESEGMENT
-    if (pnp_nodes_setup()) {
+    // ACPI owns motherboard enumeration whenever a valid RSDP is
+    // published. Do not expose a second runtime enumerator.
+    memset(&PnpRuntimeHeader, 0, sizeof(PnpRuntimeHeader));
+    if (pnp_nodes_setup(RsdpAddr != NULL)) {
         PnpRuntimeHeader = PNPHEADER;
         dprintf(1, "Experimental PnP BIOS: fixed system nodes available\n");
+    } else if (RsdpAddr) {
+        dprintf(1, "PnP BIOS runtime disabled: ACPI tables present\n");
     }
 #endif
 }

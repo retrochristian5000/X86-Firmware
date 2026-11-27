@@ -4,7 +4,7 @@
 
 #include "types.h"
 
-int pnp_nodes_setup(void);
+int pnp_nodes_setup(int acpi_present);
 u16 pnp_get_node_count(u16 *args);
 u16 pnp_get_node(u16 *args);
 u16 pnp_set_node(u16 *args);

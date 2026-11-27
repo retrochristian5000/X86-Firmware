@@ -414,8 +414,9 @@ menu "BIOS interfaces"
         default n
         help
             Expose a partial PnP BIOS installation structure on supported
-            PIIX platforms. Functions 00h and 01h describe fixed PCI and
-            ISA bus nodes; configuration writes are rejected. Function 40h
+            PIIX platforms only when no ACPI RSDP is published.
+            Functions 00h and 01h describe fixed buses and motherboard
+            resources; configuration writes are rejected. Function 40h
             reports zero assigned ISA PnP card select numbers. This is not
             a complete motherboard inventory. Leave disabled for normal guests.
     config OPTIONROMS

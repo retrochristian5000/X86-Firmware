@@ -51,15 +51,18 @@ u8 PnpIsaConfig[6] VARFSEG = { 1, 0, 0, 0, 0, 0 };
 #endif
 
 int
-pnp_nodes_setup(void)
+pnp_nodes_setup(int acpi_present)
 {
 #if CONFIG_PNPBIOS_RUNTIME && !MODESEGMENT
+    PnpNodeMask = 0;
+    if (acpi_present)
+        return 0;
+
     struct pci_device *router =
         pci_find_device(PCI_VENDOR_ID_INTEL, PCI_DEVICE_ID_INTEL_82371SB_0);
     if (!router)
         router = pci_find_device(PCI_VENDOR_ID_INTEL,
                                  PCI_DEVICE_ID_INTEL_82371AB_0);
-    PnpNodeMask = 0;
     if (!router || router->bdf != pci_to_bdf(0, 1, 0))
         return 0;
     struct romfile_s *file = romfile_find(PNP_CORE_FILE);

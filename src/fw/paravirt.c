@@ -286,7 +286,6 @@ qemu_platform_setup(void)
 
     // Initialize pci
     pci_setup();
-    pnp_runtime_setup();
     smm_device_setup();
     smm_setup();
 
@@ -314,6 +313,7 @@ qemu_platform_setup(void)
         if (RsdpAddr) {
             acpi_dsdt_parse();
             virtio_mmio_setup_acpi();
+            pnp_runtime_setup();
             return;
         }
         /* If present, loader should have installed an RSDP.
@@ -325,6 +325,7 @@ qemu_platform_setup(void)
     }
 
     acpi_setup();
+    pnp_runtime_setup();
 }
 
 

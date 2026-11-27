@@ -15,8 +15,15 @@ def main():
     parser.add_argument("--assembler", default="as")
     parser.add_argument("--linker", default="ld")
     args = parser.parse_args()
-    source = Path(__file__).with_suffix(".S").resolve()
+    base = Path(__file__).resolve().parent
 
+    for acpi, name in (("off", "test-isa-pnp.S"),
+                       ("on", "test-pnp-acpi.S")):
+        run_case(args, base / name, acpi)
+    return 0
+
+
+def run_case(args, source, acpi):
     with tempfile.TemporaryDirectory(prefix="isa-pnp-test-") as tmp:
         obj = Path(tmp) / "test.o"
         disk = Path(tmp) / "test.img"
@@ -32,7 +39,7 @@ def main():
             image.truncate(1440 * 1024)
 
         result = subprocess.run(
-            [str(args.qemu.resolve()), "-M", "pc,acpi=off", "-accel", "tcg",
+            [str(args.qemu.resolve()), "-M", f"pc,acpi={acpi}", "-accel", "tcg",
              "-nodefaults", "-vga", "none",
              "-bios", str(args.bios.resolve()), "-display", "none",
              "-serial", "none", "-monitor", "none", "-no-reboot",
@@ -41,9 +48,10 @@ def main():
             check=False, timeout=60,
         )
     if result.returncode == 0x21:
-        print("ISA PnP real-mode BIOS tests passed")
-        return 0
-    raise SystemExit(f"ISA PnP BIOS test failed: {result.returncode}")
+        print(f"ISA PnP real-mode BIOS tests passed (ACPI {acpi})")
+        return
+    raise SystemExit(f"ISA PnP BIOS test failed (ACPI {acpi}): "
+                     f"{result.returncode}")
 
 
 if __name__ == "__main__":

@@ -3,8 +3,27 @@
 The firmware supplies the BBS header and version check (function 60h)
 directly to option ROMs, independently of OS discovery. The experimental
 CONFIG_PNPBIOS_RUNTIME option is disabled by default. On a QEMU PIIX3
-or PIIX4 platform with the router at 00:01.0, it now publishes a separate
-aligned installation structure after PCI initialization.
+or PIIX4 platform with the router at 00:01.0, it publishes a separate
+aligned installation structure only after ACPI table loading/discovery
+and only if no valid ACPI RSDP was published. If an RSDP is present,
+the runtime installation structure and node mask remain zero; functions
+00h, 01h, 02h and 40h return FUNCTION_NOT_SUPPORTED (82h), even if
+called through the option-ROM entry point. The unaligned BBS header
+and function 60h remain available for boot ROMs.
+
+This selects a single firmware motherboard enumeration path, following
+PC 98 System Design Guide, Basic PC 98 General System Requirements,
+requirement 5:
+https://techshelps.github.io/MSDN/PC98/HTML/03bas98_1.htm
+
+Use the existing machine configuration with ACPI for ACPI guests.
+For a deliberate legacy PnP BIOS test boot, build the runtime-enabled
+ROM and use `-M pc,acpi=off`. The choice is based on firmware table
+publication, not a prediction of the guest OS's ACPI driver state.
+Do not switch an existing Windows installation between these modes
+without a snapshot; its persisted device records may need redetection.
+No PCI enumeration, ISA PnP card isolation, hardware resources, or
+guest registry entries are changed by this policy.
 
 Functions 00h and 01h preserve the PCI root (handle 0, PNP0A03) and
 ISA bus (handle 1, PNP0A00). With the QEMU boot-time presence file
@@ -125,3 +144,8 @@ https://www.osdever.net/documents/PNPBIOSSpecification-v1.0a.pdf
 The fixed node host regression is `tests/pnp-fixed-nodes-test.c`.
 The real-mode regression `scripts/test-isa-pnp.py` requires the matching
 QEMU build that publishes the presence file and a runtime-enabled ROM.
+
+The real-mode test runner now runs two independent cold boots with
+ACPI off and on. The ACPI-off case exercises the six-node inventory;
+the ACPI-on case requires a valid RSDP and rejects any discoverable
+aligned runtime PnP installation structure. BBS remains separate.
