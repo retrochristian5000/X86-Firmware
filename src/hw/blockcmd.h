@@ -139,6 +139,7 @@ struct disk_op_s;
 int scsi_fill_cmd(struct disk_op_s *op, void *cdbcmd, int maxcdb);
 int scsi_is_read(struct disk_op_s *op);
 int scsi_is_ready(struct disk_op_s *op);
+int scsi_is_ready_now(struct disk_op_s *op);
 struct drive_s;
 int scsi_drive_setup(struct drive_s *drive, const char *s, int prio);
 typedef int (*scsi_add_lun)(u32 lun, struct drive_s *tmpl_drv);
