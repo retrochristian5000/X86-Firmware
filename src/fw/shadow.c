@@ -22,57 +22,50 @@
 // On the emulators, the bios at 0xf0000 is also at 0xffff0000
 #define BIOS_SRC_OFFSET 0xfff00000
 
-union pamdata_u {
-    u8 data8[8];
-    u32 data32[2];
-};
-
-// Enable shadowing and copy bios.
+// Enable shadowing and copy only the ROM-backed parts of the image.
+// Execute from the high ROM alias if any firmware block changes its
+// read mapping. This also works on machines without independent PAM reads.
 static void
-__make_bios_writable_intel(u16 bdf, u32 pam0)
+__make_bios_writable_intel(u16 bdf, u32 pam0, u16 copy_mask)
 {
-    // Read in current PAM settings from pci config space
-    union pamdata_u pamdata;
-    pamdata.data32[0] = pci_ioconfig_readl(bdf, ALIGN_DOWN(pam0, 4));
-    pamdata.data32[1] = pci_ioconfig_readl(bdf, ALIGN_DOWN(pam0, 4) + 4);
-    u8 *pam = &pamdata.data8[pam0 & 0x03];
+    // Write only the PAM bytes, not adjacent chipset registers.
+    for (int i = 1; i < 7; i++)
+        pci_ioconfig_writeb(bdf, pam0 + i, 0x33);
+    pci_ioconfig_writeb(bdf, pam0, 0x30);
 
-    // Make ram from 0xc0000-0xf0000 writable
-    int i;
-    for (i=0; i<6; i++)
-        pam[i + 1] = 0x33;
-
-    // Make ram from 0xf0000-0x100000 writable
-    int ram_present = pam[0] & 0x10;
-    pam[0] = 0x30;
-
-    // Write PAM settings back to pci config space
-    pci_ioconfig_writel(bdf, ALIGN_DOWN(pam0, 4), pamdata.data32[0]);
-    pci_ioconfig_writel(bdf, ALIGN_DOWN(pam0, 4) + 4, pamdata.data32[1]);
-
-    if (!ram_present)
-        // Copy bios.
-        memcpy(VSYMBOL(code32flat_start)
-               , VSYMBOL(code32flat_start) + BIOS_SRC_OFFSET
-               , SYMBOL(code32flat_end) - SYMBOL(code32flat_start));
+    u32 image_start = SYMBOL(code32flat_start);
+    u32 image_end = SYMBOL(code32flat_end);
+    for (unsigned i = 0; copy_mask && i < 16; i++) {
+        if (!(copy_mask & (1u << i)))
+            continue;
+        u32 start = SHADOW_WRITE_BASE + i * SHADOW_UMB_BLOCK;
+        u32 end = start + SHADOW_UMB_BLOCK;
+        if (start < image_start)
+            start = image_start;
+        if (end > image_end)
+            end = image_end;
+        memcpy((void*)start, (void*)(start + BIOS_SRC_OFFSET), end - start);
+    }
 }
 
 static void
 make_bios_writable_intel(u16 bdf, u32 pam0)
 {
-    int reg = pci_ioconfig_readb(bdf, pam0);
-    if (!(reg & 0x10)) {
-        // QEMU doesn't fully implement the piix shadow capabilities -
-        // if ram isn't backing the bios segment when shadowing is
-        // disabled, the code itself won't be in memory.  So, run the
-        // code from the high-memory flash location.
+    u8 pam[7];
+    for (unsigned i = 0; i < ARRAY_SIZE(pam); i++)
+        pam[i] = pci_ioconfig_readb(bdf, pam0 + i);
+
+    u16 copy_mask = shadow_copy_mask(pam, SYMBOL(code32flat_start),
+                                    SYMBOL(code32flat_end));
+    if (copy_mask) {
+        // Do not execute from any low ROM block while changing its mapping.
         u32 pos = (u32)__make_bios_writable_intel + BIOS_SRC_OFFSET;
-        void (*func)(u16 bdf, u32 pam0) = (void*)pos;
-        func(bdf, pam0);
+        void (*func)(u16 bdf, u32 pam0, u16 copy_mask) = (void*)pos;
+        func(bdf, pam0, copy_mask);
         return;
     }
-    // Ram already present - just enable writes
-    __make_bios_writable_intel(bdf, pam0);
+    // All firmware blocks already read from RAM; just enable writes.
+    __make_bios_writable_intel(bdf, pam0, 0);
 }
 
 static void
@@ -80,12 +73,6 @@ make_bios_readonly_intel(u16 bdf, u32 pam0)
 {
     // Flush any pending writes before locking memory.
     wbinvd();
-
-    // Read in current PAM settings from pci config space
-    union pamdata_u pamdata;
-    pamdata.data32[0] = pci_config_readl(bdf, ALIGN_DOWN(pam0, 4));
-    pamdata.data32[1] = pci_config_readl(bdf, ALIGN_DOWN(pam0, 4) + 4);
-    u8 *pam = &pamdata.data8[pam0 & 0x03];
 
     // Classify every 16 KiB block, including the final partial
     // ROM/runtime boundary. A larger BIOS may contain code below F0000h.
@@ -95,17 +82,15 @@ make_bios_readonly_intel(u16 bdf, u32 pam0)
     int i;
     for (i = 0; i < 6; i++) {
         u32 mem = BUILD_ROM_START + i * 2 * SHADOW_UMB_BLOCK;
-        pam[i + 1] = shadow_umb_pam(mem, romlast, runtime_start,
-                                   readonly_start, CONFIG_MALLOC_UPPERMEMORY,
-                                   CONFIG_WRITABLE_UPPERMEMORY);
+        pci_config_writeb(bdf, pam0 + i + 1,
+                          shadow_umb_pam(mem, romlast, runtime_start,
+                                         readonly_start,
+                                         CONFIG_MALLOC_UPPERMEMORY,
+                                         CONFIG_WRITABLE_UPPERMEMORY));
     }
 
     // Write protect 0xf0000-0x100000
-    pam[0] = 0x10;
-
-    // Write PAM settings back to pci config space
-    pci_config_writel(bdf, ALIGN_DOWN(pam0, 4), pamdata.data32[0]);
-    pci_config_writel(bdf, ALIGN_DOWN(pam0, 4) + 4, pamdata.data32[1]);
+    pci_config_writeb(bdf, pam0, 0x10);
 }
 
 static int ShadowBDF = -1;

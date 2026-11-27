@@ -60,6 +60,24 @@ int main(void)
     CHECK(legacy_e801_high_blocks(65536) == 1);
     CHECK(legacy_e801_high_blocks(0xffffffffu) == 0xffff);
 
+    // Initial and mixed shadow states, including a partial first block.
+    u8 pam[7] = {0};
+    CHECK(shadow_copy_mask(pam, 0xf0000, 0x100000) == 0xf000);
+    CHECK(shadow_copy_mask(pam, 0xe0000, 0x100000) == 0xff00);
+    CHECK(shadow_copy_mask(pam, 0xc0000, 0x100000) == 0xffff);
+    pam[0] = 0x10;
+    CHECK(shadow_copy_mask(pam, 0xe0100, 0x100000) == 0x0f00);
+    pam[5] = 0x13;
+    CHECK(shadow_copy_mask(pam, 0xe0100, 0x100000) == 0x0c00);
+    pam[6] = 0x21;
+    CHECK(shadow_copy_mask(pam, 0xe0100, 0x100000) == 0x0800);
+    pam[6] = 0x31;
+    CHECK(shadow_copy_mask(pam, 0xe0100, 0x100000) == 0);
+    pam[0] = 0x20;
+    CHECK(shadow_copy_mask(pam, 0xf0001, 0x100000) == 0xf000);
+    CHECK(shadow_copy_mask(pam, 0xc1000, 0xc4000) == 1);
+    CHECK(shadow_copy_mask(pam, 0xc4000, 0xc8000) == 2);
+
     // Default: unused and ROM blocks read-only; live data writable.
     CHECK(shadow_umb_pam(0xc0000, 0xc6000, 0xe4000, 0xec000,
                          1, 0) == 0x11);
