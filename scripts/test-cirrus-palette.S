@@ -107,6 +107,51 @@ _start:
     call read_rgb
     cmpb %bl, %al
     je fail_gray
+
+    /* VBE 4F15h must report DDC2B, then return the real base EDID. */
+    movw $0x4f15, %ax
+    xorw %bx, %bx
+    xorw %cx, %cx
+    int $0x10
+    cmpw $0x004f, %ax
+    jne fail_ddc
+    cmpb $2, %bl
+    jne fail_ddc
+    movw $0x4f15, %ax
+    movw $1, %bx
+    xorw %cx, %cx
+    xorw %dx, %dx
+    movw %cx, %es
+    movw $0x600, %di
+    int $0x10
+    cmpw $0x004f, %ax
+    jne fail_ddc
+    cmpl $0xffffff00, 0x600
+    jne fail_ddc
+    cmpl $0x00ffffff, 0x604
+    jne fail_ddc
+    testb $0x80, 0x614
+    jnz fail_ddc
+    cmpb $0, 0x67e
+    jne fail_ddc
+    movw $0x600, %si
+    movw $128, %cx
+    xorb %bl, %bl
+1:
+    lodsb
+    addb %al, %bl
+    loop 1b
+    testb %bl, %bl
+    jne fail_ddc
+
+    /* A second block must not return a fabricated or wrapped EDID. */
+    movw $0x4f15, %ax
+    movw $1, %bx
+    xorw %cx, %cx
+    movw $1, %dx
+    int $0x10
+    cmpw $0x014f, %ax
+    jne fail_ddc
     movb $0x10, %al
     jmp exit_test
 
@@ -143,6 +188,9 @@ fail_preserve:
     jmp exit_test
 fail_gray:
     movb $0x22, %al
+    jmp exit_test
+fail_ddc:
+    movb $0x23, %al
 exit_test:
     outb %al, $0xf4
     cli
