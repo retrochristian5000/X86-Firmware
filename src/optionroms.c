@@ -65,23 +65,30 @@ call_bcv(u16 seg, u16 ip)
     __callrom(MAKE_FLATPTR(seg, 0), ip, 0);
 }
 
-// Verify that an option rom looks valid
-static int
-is_valid_rom(struct rom_header *rom, u32 available)
+// Check the header before accessing the image body.
+static u32
+rom_image_size(struct rom_header *rom, u32 available)
 {
-    if (available < sizeof(*rom))
+    if (available < sizeof(*rom) ||
+        rom->signature != OPTION_ROM_SIGNATURE || !rom->size)
         return 0;
-    dprintf(6, "Checking rom %p (sig %x size %d)\n"
-            , rom, rom->signature, rom->size);
-    if (rom->signature != OPTION_ROM_SIGNATURE)
-        return 0;
-    if (! rom->size)
-        return 0;
-    u32 len = rom->size * 512;
+    u32 len = rom->size * 512u;
     if (len > available) {
         dprintf(1, "Option ROM size exceeds available image bytes\n");
         return 0;
     }
+    return len;
+}
+
+// Check the copied image once, rather than checksum slow PCI MMIO reads.
+static int
+is_valid_rom(struct rom_header *rom, u32 available)
+{
+    u32 len = rom_image_size(rom, available);
+    if (!len)
+        return 0;
+    dprintf(6, "Checking rom %p (sig %x size %d)\n"
+            , rom, rom->signature, rom->size);
     u8 sum = checksum(rom, len);
     if (sum != 0) {
         dprintf(1, "Found option rom with bad checksum: loc=%p len=%d sum=%x\n"
@@ -152,10 +159,11 @@ get_pci_rom(struct rom_header *rom, u32 available)
 static int
 init_optionrom(struct rom_header *rom, u16 bdf, int isvga)
 {
-    // All callers have copied a bounded, validated image into this area.
-    u32 initial = rom->size * 512;
-    if (!is_valid_rom(rom, rom_get_max() - (u32)rom))
+    // All callers have copied a structurally bounded image into this area.
+    if ((u32)rom > rom_get_max() ||
+        !is_valid_rom(rom, rom_get_max() - (u32)rom))
         return -1;
+    u32 initial = rom->size * 512u;
     struct rom_header *newrom = rom_reserve(initial);
     if (!newrom) {
         warn_noalloc();
@@ -179,8 +187,8 @@ init_optionrom(struct rom_header *rom, u16 bdf, int isvga)
     u32 resident = newrom->size * 512;
     if (rom_confirm(resident))
         return -1;
-    // Clear released bytes and alignment padding while they are still
-    // within the reservation. Do not touch subsequent PMM allocations.
+    // Clear the released image tail before another ROM uses the space.
+    // Do not touch bytes beyond the original initialization image.
     memset((u8*)newrom + resident, 0, initial - resident);
     return 0;
 }
@@ -223,7 +231,7 @@ deploy_romfile(struct romfile_s *file)
         return NULL;
     }
     int ret = file->copy(file, rom, size);
-    if (ret < 0 || (u32)ret != size || !is_valid_rom(rom, size)) {
+    if (ret < 0 || (u32)ret != size || !rom_image_size(rom, size)) {
         memset(rom, 0, size);
         return NULL;
     }
@@ -345,7 +353,7 @@ map_pcirom(struct pci_device *pci)
 
         if (pd->vendor == pci->vendor && pd->device == pci->device
             && pd->type == PCIROM_CODETYPE_X86) {
-            if (!is_valid_rom(rom, image_size))
+            if (!rom_image_size(rom, image_size))
                 goto fail;
             break;
         }
