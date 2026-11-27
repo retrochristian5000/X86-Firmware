@@ -594,11 +594,20 @@ malloc_prepboot(void)
         panic("Invalid option ROM range at boot handoff\n");
     memset((void*)RomEnd, 0, base-RomEnd);
     if (CONFIG_MALLOC_UPPERMEMORY) {
-        // Place an optionrom signature around used low mem area.
-        struct rom_header *dummyrom = (void*)base;
-        dummyrom->signature = OPTION_ROM_SIGNATURE;
-        int size = (BUILD_BIOS_ADDR - base) / 512;
-        dummyrom->size = (size > 255) ? 255 : size;
+        // Reserve runtime memory for legacy memory scanners. This is a
+        // marker, not a device ROM: only OPROM_HEADER_RESERVE bytes belong
+        // to it. A far return makes accidental INIT calls harmless.
+        if (base < BUILD_BIOS_ADDR) {
+            struct rom_header *dummyrom = (void*)base;
+            memset(dummyrom, 0, OPROM_HEADER_RESERVE);
+            dummyrom->signature = OPTION_ROM_SIGNATURE;
+            u32 size = (BUILD_BIOS_ADDR - base) / 512;
+            dummyrom->size = (size > 255) ? 255 : size;
+            dummyrom->initVector[0] = 0xcb; // RETF
+            // No image checksum: the described bytes include live data.
+            if (size > 255)
+                dprintf(1, "Upper memory marker exceeds ROM size field\n");
+        }
     }
 
     // Reserve more low-mem if needed.
