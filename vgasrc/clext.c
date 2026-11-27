@@ -363,9 +363,10 @@ clext_set_displaystart(struct vgamode_s *curmode_g, int val)
     val = val * stdvga_vram_ratio(curmode_g) / 4;
     stdvga_crtc_write(crtc_addr, 0x0d, val);
     stdvga_crtc_write(crtc_addr, 0x0c, val >> 8);
-    stdvga_crtc_mask(crtc_addr, 0x1d, 0x80, (val & 0x0800) >> 4);
+    // Screen Start A[19:16] lives in CR1D[7] and CR1B[3:2,0].
+    stdvga_crtc_mask(crtc_addr, 0x1d, 0x80, (val & 0x80000) >> 12);
     stdvga_crtc_mask(crtc_addr, 0x1b, 0x0d
-                     , ((val & 0x0100) >> 8) | ((val & 0x0600) >> 7));
+                     , ((val & 0x10000) >> 16) | ((val & 0x60000) >> 15));
     return 0;
 }
 
