@@ -106,12 +106,12 @@ uint8_t ct1741_accept(CT1741Command *state, uint8_t value)
     state->arg_count = 0;
     switch (value) {
     case 0xe0: case 0xe4: case 0xe2: case 0x40: case 0x10:
-    case 0x04: case 0x0f: case 0xf9:
+    case 0x04: case 0x0f: case 0xf9: case 0x38:
         state->arg_count = 1;
         break;
     case 0x14: case 0x41: case 0x42: case 0x48: case 0x05: case 0x0e:
     case 0x74: case 0x75: case 0x76: case 0x77: case 0x80:
-    case 0x24:
+    case 0x16: case 0x17: case 0x24:
         state->arg_count = 2;
         break;
     case 0xe1:

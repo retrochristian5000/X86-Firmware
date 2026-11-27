@@ -9,6 +9,29 @@ static void expect(CT1741Command *state, uint8_t expected)
     assert(value == expected);
 }
 
+static void test_unsupported_frames(void)
+{
+    static const uint8_t commands[] = { 0x16, 0x17, 0x38 };
+    CT1741Command state;
+    uint8_t value;
+
+    for (unsigned int i = 0; i < sizeof(commands); i++) {
+        ct1741_reset(&state);
+        expect(&state, 0xaa);
+        assert(ct1741_accept(&state, commands[i]));
+        assert(ct1741_accept(&state, 0xf2));
+        assert(!ct1741_take_action(&state));
+        if (commands[i] != 0x38) {
+            assert(ct1741_accept(&state, 0xf3));
+            assert(!ct1741_take_action(&state));
+        }
+        assert(!ct1741_take(&state, &value));
+        assert(ct1741_accept(&state, 0xe1));
+        expect(&state, 4);
+        expect(&state, 5);
+    }
+}
+
 int main(void)
 {
     CT1741Command state;
@@ -116,5 +139,6 @@ int main(void)
     ct1741_reset(&state);
     expect(&state, 0xaa);
     assert(!ct1741_take_action(&state));
+    test_unsupported_frames();
     return 0;
 }
