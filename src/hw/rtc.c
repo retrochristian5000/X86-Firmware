@@ -166,6 +166,9 @@ rtc_release(void)
     if (!CONFIG_RTC_TIMER)
         return;
     int count = GET_LOW(RTCusers);
+    // Do not underflow the shared reference count on an unmatched release.
+    if (count <= 0)
+        return;
     SET_LOW(RTCusers, count-1);
     if (count != 1)
         return;
