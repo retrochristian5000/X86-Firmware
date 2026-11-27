@@ -14,6 +14,8 @@
 #include "std/pirtable.h" // struct pir_header
 #include "string.h" // checksum
 #include "util.h" // handle_1ab1
+#include "x86.h" // inb
+#include "pci-irq-route.h" // pci_piix_route_apply
 
 // romlayout.S
 extern void entry_bios32(void);
@@ -23,13 +25,15 @@ extern void entry_pcibios32(void);
 #define RET_BAD_VENDOR_ID      0x83
 #define RET_DEVICE_NOT_FOUND   0x86
 #define RET_BAD_REGISTER       0x87
+#define RET_SET_FAILED         0x88
 #define RET_BUFFER_TOO_SMALL   0x89
 
 // installation check
 static void
 handle_1ab101(struct bregs *regs)
 {
-    regs->al = 0x01; // Flags - "Config Mechanism #1" supported.
+    // Mechanism #1 is supported; special-cycle broadcasts are not.
+    regs->al = 0x01;
     regs->bx = 0x0210; // PCI version 2.10
     regs->cl = GET_GLOBAL(MaxPCIBus);
     regs->edx = 0x20494350; // "PCI "
@@ -87,6 +91,14 @@ handle_1ab103(struct bregs *regs)
         }
     }
     set_code_invalid(regs, RET_DEVICE_NOT_FOUND);
+}
+
+// PCI BIOS 2.1 section 4.2.1. A config write is not a special cycle.
+// Do not issue one to a nonexistent (or real) device as a substitute.
+static void
+handle_1ab106(struct bregs *regs)
+{
+    set_code_invalid(regs, RET_FUNC_NOT_SUPPORTED);
 }
 
 // PCI BIOS 2.10 exposes only the conventional 256-byte configuration space.
@@ -217,6 +229,51 @@ handle_1ab10e(struct bregs *regs)
     set_code_success(regs);
 }
 
+// PCI BIOS 2.1 section 4.2.3: change the shared physical PIRQ route.
+// The OS owns resource conflict checks and PCI Interrupt Line updates.
+static void
+handle_1ab10f(struct bregs *regs)
+{
+    struct pir_header *flat = GET_GLOBAL(PirAddr);
+    if (!CONFIG_QEMU || !flat)
+        goto unsupported;
+    struct pir_header *pir = GLOBALFLAT2GLOBAL(flat);
+    u32 id = GET_GLOBAL(pir->compatible_devid);
+    if (GET_GLOBAL(pir->router_bus) != 0
+        || GET_GLOBAL(pir->router_devfunc) != PCI_PIIX_ROUTER_BDF
+        || (id != PCI_PIIX3_ROUTER_ID && id != PCI_PIIX4_ROUTER_ID)
+        || pci_ioconfig_readl(PCI_PIIX_ROUTER_BDF, PCI_VENDOR_ID) != id)
+        goto unsupported;
+
+    unsigned int pin = regs->cl;
+    unsigned int irq = regs->ch;
+    unsigned int size = GET_GLOBAL(pir->size);
+    if (regs->bh || pin < 0x0a || pin > 0x0d || irq >= 16
+        || size < sizeof(*pir)
+        || (size - sizeof(*pir)) % sizeof(struct pir_slot))
+        goto failed;
+
+    unsigned int count = (size - sizeof(*pir)) / sizeof(struct pir_slot);
+    for (unsigned int i = 0; i < count; i++) {
+        struct pir_slot *slot = &pir->slots[i];
+        if (GET_GLOBAL(slot->bus)
+            || (GET_GLOBAL(slot->dev) & 0xf8) != (regs->bl & 0xf8))
+            continue;
+        unsigned int link = GET_GLOBAL(slot->links[pin - 0x0a].link);
+        unsigned int bitmap = GET_GLOBAL(slot->links[pin - 0x0a].bitmap);
+        if (!pci_piix_route_valid(pin, irq, link, bitmap)
+            || pci_piix_route_apply(link, irq))
+            goto failed;
+        set_code_success(regs);
+        return;
+    }
+failed:
+    set_code_invalid(regs, RET_SET_FAILED);
+    return;
+unsupported:
+    set_code_invalid(regs, RET_FUNC_NOT_SUPPORTED);
+}
+
 static void
 handle_1ab1XX(struct bregs *regs)
 {
@@ -237,6 +294,7 @@ handle_1ab1(struct bregs *regs)
     case 0x01: handle_1ab101(regs); break;
     case 0x02: handle_1ab102(regs); break;
     case 0x03: handle_1ab103(regs); break;
+    case 0x06: handle_1ab106(regs); break;
     case 0x08: handle_1ab108(regs); break;
     case 0x09: handle_1ab109(regs); break;
     case 0x0a: handle_1ab10a(regs); break;
@@ -244,6 +302,7 @@ handle_1ab1(struct bregs *regs)
     case 0x0c: handle_1ab10c(regs); break;
     case 0x0d: handle_1ab10d(regs); break;
     case 0x0e: handle_1ab10e(regs); break;
+    case 0x0f: handle_1ab10f(regs); break;
     default:   handle_1ab1XX(regs); break;
     }
 }
