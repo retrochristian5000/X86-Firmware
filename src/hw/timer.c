@@ -47,6 +47,7 @@
 #define PPCB_T2GATE (1<<0)
 #define PPCB_SPKR   (1<<1)
 #define PPCB_T2OUT  (1<<5)
+#define PPCB_WRITABLE 0x0f
 
 #define PMTIMER_HZ 3579545      // Underlying Hz of the PM Timer
 #define PMTIMER_TO_PIT 3        // Ratio of pmtimer rate to pit rate
@@ -68,7 +69,7 @@ static void
 tsctimer_setup(void)
 {
     // Stop channel 2 and mute the speaker while programming the counter.
-    u8 orig = inb(PORT_PS2_CTRLB);
+    u8 orig = inb(PORT_PS2_CTRLB) & PPCB_WRITABLE;
     u8 gate_off = orig & ~(PPCB_SPKR | PPCB_T2GATE);
     outb(gate_off, PORT_PS2_CTRLB);
     /* binary, mode 0, LSB/MSB, Ch 2 */
@@ -322,4 +323,12 @@ pit_setup(void)
     // maximum count of 0000H = 18.2Hz
     outb(0x0, PORT_PIT_COUNTER0);
     outb(0x0, PORT_PIT_COUNTER0);
+
+    // Leave a muted, stopped speaker with a defined periodic mode.
+    // Preserve NMI control bits, but never write back read-only status.
+    outb(inb(PORT_PS2_CTRLB) & (PPCB_WRITABLE &
+                              ~(PPCB_SPKR | PPCB_T2GATE)), PORT_PS2_CTRLB);
+    outb(PM_SEL_TIMER2|PM_ACCESS_WORD|PM_MODE3|PM_CNT_BINARY, PORT_PIT_MODE);
+    outb(0, PORT_PIT_COUNTER2);
+    outb(0, PORT_PIT_COUNTER2);
 }
