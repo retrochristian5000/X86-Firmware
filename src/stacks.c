@@ -706,24 +706,30 @@ static u32 PreemptCount;
 void
 start_preempt(void)
 {
-    if (! threads_during_optionroms())
+    // A periodic IRQ is useful only while POST workers are runnable.
+    if (!threads_during_optionroms() || !have_threads() || CanPreempt)
         return;
     CanPreempt = 1;
     PreemptCount = 0;
     rtc_use();
 }
 
-// Turn off RTC irqs / stop checking for thread execution.
+// Release only the periodic RTC reference acquired by start_preempt().
+static void
+stop_preempt(void)
+{
+    if (!CanPreempt)
+        return;
+    CanPreempt = 0;
+    rtc_release();
+    dprintf(9, "Done preempt - %u checks\n", PreemptCount);
+}
+
+// Turn off RTC preemption when an option ROM returns.
 void
 finish_preempt(void)
 {
-    if (! threads_during_optionroms()) {
-        yield();
-        return;
-    }
-    CanPreempt = 0;
-    rtc_release();
-    dprintf(9, "Done preempt - %d checks\n", PreemptCount);
+    stop_preempt();
     yield();
 }
 
@@ -745,6 +751,10 @@ yield_preempt(void)
 {
     PreemptCount++;
     switch_next(&MainThread);
+    // The option ROM can continue running after the last worker exits.
+    // Do not keep interrupting it merely to find an empty worker list.
+    if (!have_threads())
+        stop_preempt();
 }
 
 // 16bit code that checks if threads are pending and executes them if so.
