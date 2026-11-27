@@ -54,16 +54,13 @@ reports the provisional compatibility version 4.05 in major/minor order;
 E4h stores a test byte and E8h reads it back. The version is not a claim
 of equivalence to the original Creative 4.05 firmware. The host test
 checks response ordering, all 256 identification values, parameter
-framing, reset and backpressure. Unsupported commands are ignored
-without parameter framing; do not use this image as a general-purpose
-Sound Blaster driver target.
+framing, reset and backpressure. PCM commands now produce hardware actions through the private v1 mailbox below. Known unsupported parameter frames (including ADC and DMA identification) are consumed without performing those operations. Unknown commands remain unsupported.
 
 ## Integration boundary
 
 QEMU must supply an 8052 CPU core, program ROM mapping, host latches,
 reset wiring and the remaining DMA, IRQ, DAC/ADC and clock interfaces.
-Do not point an x86 option-ROM loader at this image. No existing QEMU
-device loads or executes this image yet. Do not enable it by default
+Do not point an x86 option-ROM loader at this image. QEMU's experimental CT1741 firmware transport loads and executes this image. Do not enable it by default
 or replace the current SB16 implementation before PCM and driver tests
 pass. No physical card flashing is supported.
 
@@ -74,3 +71,17 @@ References:
 - Independent CT1741 model, MAME 0.289:
   https://sources.debian.org/src/mame/0.289%2Bdfsg1-1/src/devices/sound/ct1741.cpp
 - SDCC: https://sdcc.sourceforge.net/
+
+## Experimental PCM hardware interface v1
+
+The firmware owns host command framing. XDATA 0101h–0104h holds four
+argument bytes; writing 0100h commits one action. This is an invented
+internal emulation ABI, not a Creative register map. The card supplies
+DMA, sample conversion, speaker control and IRQ acknowledgement. Actions:
+1 rate (big-endian), 2 time constant, 3 legacy block length (little-endian
+minus one), 4 PCM start (command, mode, length low, length high),
+5 legacy start (command, length low, length high), 6 DMA control
+(command), 7 speaker (0/1), 8 test IRQ (0=8-bit, 1=16-bit).
+Playback supports B0/B2/B4/B6 and C0/C2/C4/C6, legacy 14h/1Ch/90h/91h,
+40h/41h/48h and pause/resume/exit commands. Capture, direct DAC, ADPCM,
+E2h identification DMA and cycle-accurate timers remain unimplemented.

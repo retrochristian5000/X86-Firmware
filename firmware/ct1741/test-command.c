@@ -47,5 +47,40 @@ int main(void)
     ct1741_reset(&state);
     expect(&state, 0xaa);
     assert(!ct1741_take(&state, &value));
+    assert(ct1741_accept(&state, 0x41));
+    assert(ct1741_accept(&state, 0xac));
+    assert(!ct1741_take_action(&state));
+    assert(ct1741_accept(&state, 0x44));
+    assert(!ct1741_accept(&state, 0xb6));
+    assert(ct1741_take_action(&state) == CT1741_ACTION_RATE);
+    assert(state.args[0] == 0xac && state.args[1] == 0x44);
+
+    assert(ct1741_accept(&state, 0xb6));
+    assert(ct1741_accept(&state, 0x30));
+    assert(ct1741_accept(&state, 0x34));
+    assert(!ct1741_take_action(&state));
+    assert(ct1741_accept(&state, 0x12));
+    assert(ct1741_take_action(&state) == CT1741_ACTION_START);
+    assert(state.args[0] == 0xb6 && state.args[1] == 0x30);
+    assert(state.args[2] == 0x34 && state.args[3] == 0x12);
+
+    assert(ct1741_accept(&state, 0xc8)); /* ADC frame is consumed. */
+    assert(ct1741_accept(&state, 0xe1));
+    assert(ct1741_accept(&state, 0xe1));
+    assert(ct1741_accept(&state, 0xe1));
+    assert(!ct1741_take_action(&state));
+    assert(ct1741_accept(&state, 0xd5));
+    assert(ct1741_take_action(&state) == CT1741_ACTION_DMA_CONTROL);
+    assert(state.args[0] == 0xd5);
+    assert(ct1741_accept(&state, 0xd1));
+    assert(ct1741_take_action(&state) == CT1741_ACTION_SPEAKER);
+    assert(ct1741_accept(&state, 0xd8));
+    expect(&state, 0xff);
+
+    assert(ct1741_accept(&state, 0xc0));
+    assert(ct1741_accept(&state, 0));
+    ct1741_reset(&state);
+    expect(&state, 0xaa);
+    assert(!ct1741_take_action(&state));
     return 0;
 }
