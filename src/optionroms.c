@@ -49,6 +49,8 @@ __callrom(struct rom_header *rom, u16 offset, u16 bdf)
     start_preempt();
     farcall16big(&br);
     finish_preempt();
+    if (CONFIG_ROM_SIZE > 128)
+        dprintf(1, "Option ROM returned from %04x:%04x\n", seg, offset);
 }
 
 // Execute a given option rom at the standard entry vector.
@@ -271,8 +273,11 @@ is_pci_vga(struct pci_device *pci)
         return 0;
     while (pci->parent) {
         pci = pci->parent;
+        u16 bridgecmd = pci_config_readw(pci->bdf, PCI_COMMAND);
         u32 ctrl = pci_config_readb(pci->bdf, PCI_BRIDGE_CONTROL);
-        if (!(ctrl & PCI_BRIDGE_CTL_VGA))
+        if (!(ctrl & PCI_BRIDGE_CTL_VGA) ||
+            (bridgecmd & (PCI_COMMAND_IO | PCI_COMMAND_MEMORY)) !=
+            (PCI_COMMAND_IO | PCI_COMMAND_MEMORY))
             return 0;
     }
     return 1;
@@ -413,7 +418,9 @@ init_pcirom(struct pci_device *pci, int isvga, u64 *sources)
     int irq_was_captured = boot_irq_captured();
     int had_pnp = !!get_pnp_rom(rom);
     setRomSource(sources, rom, RS_PCIROM | (u32)pci);
-    init_optionrom(rom, pci->bdf, isvga);
+    int ret = init_optionrom(rom, pci->bdf, isvga);
+    if (CONFIG_ROM_SIZE > 128 && ret)
+        dprintf(1, "PCI option ROM initialization failed at %pP\n", pci);
     if (boot_irq_captured() && !irq_was_captured &&
         !file && !isvga && had_pnp) {
         // This PCI ROM captured INT 19h despite advertising PnP support.
@@ -508,13 +515,20 @@ static void try_setup_display_other(void)
     foreachpci(pci) {
         if (pci->class != PCI_CLASS_DISPLAY_OTHER)
             continue;
+        // The expansion ROM BAR requires PCI memory decoding. Enable
+        // it before mapping, and restore the original command on failure.
+        u16 cmd = pci_config_readw(pci->bdf, PCI_COMMAND);
+        pci_config_writew(pci->bdf, PCI_COMMAND,
+                          cmd | PCI_COMMAND_IO | PCI_COMMAND_MEMORY);
         struct rom_header *rom = map_pcirom(pci);
-        if (!rom)
+        if (!rom) {
+            pci_config_writew(pci->bdf, PCI_COMMAND, cmd);
             continue;
+        }
         dprintf(1, "Other display found at %pP\n", pci);
-        pci_config_maskw(pci->bdf, PCI_COMMAND, 0,
-                         PCI_COMMAND_IO | PCI_COMMAND_MEMORY);
-        init_optionrom(rom, pci->bdf, 1);
+        if (init_optionrom(rom, pci->bdf, 1) && CONFIG_ROM_SIZE > 128)
+            dprintf(1, "Display option ROM initialization failed at %pP\n",
+                    pci);
         return;
     }
 }

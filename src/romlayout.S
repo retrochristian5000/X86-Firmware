@@ -37,6 +37,7 @@ transition32:
         // enable a20
         inb $PORT_A20, %al
         orb $A20_ENABLE_BIT, %al
+        andb $~A20_RESET_BIT, %al
         outb %al, $PORT_A20
         movl %ecx, %eax
 

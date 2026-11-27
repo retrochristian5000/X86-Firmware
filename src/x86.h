@@ -17,6 +17,7 @@
 // PORT_A20 bitdefs
 #define PORT_A20 0x0092
 #define A20_ENABLE_BIT 0x02
+#define A20_RESET_BIT 0x01
 
 #ifndef __ASSEMBLY__
 
@@ -273,7 +274,7 @@ static inline u8 get_a20(void) {
 static inline u8 set_a20(u8 cond) {
     u8 val = inb(PORT_A20), a20_enabled = (val & A20_ENABLE_BIT) != 0;
     if (a20_enabled != !!cond)
-        outb(val ^ A20_ENABLE_BIT, PORT_A20);
+        outb((val ^ A20_ENABLE_BIT) & ~A20_RESET_BIT, PORT_A20);
     return a20_enabled;
 }
 
