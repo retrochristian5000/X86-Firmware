@@ -67,13 +67,16 @@ memcpy_nowarn(void *d, const void *s, size_t len)
     memcpy(d, s, len);
 }
 
+// The assembly entry writes CS into AX, leaving the upper EAX bits intact.
+// Accept the full register and explicitly extract the segment: a compiler
+// may assume that a narrow C parameter was already extended by its caller.
 void VISIBLE32FLAT
-handle_smi(u16 cs)
+handle_smi(u32 cs)
 {
     if (!CONFIG_USE_SMM)
         return;
     u8 cmd = inb(PORT_SMI_CMD);
-    struct smm_layout *smm = MAKE_FLATPTR(cs, 0);
+    struct smm_layout *smm = MAKE_FLATPTR((u16)cs, 0);
     u32 rev = smm->cpu.i32.smm_rev & SMM_REV_MASK;
     dprintf(DEBUG_HDL_smi, "handle_smi cmd=%x smbase=%p\n", cmd, smm);
 
