@@ -22,6 +22,7 @@
 #include "output.h" // dprintf
 #include "post-selftest.h" // whp_post_e820_valid, whp_post_ram_fill
 #include "romfile.h" // romfile_find
+#include "stacks.h" // finish_preempt, wait_threads
 #include "string.h" // memset
 #include "util.h" // kbd_init
 #include "tcgbios.h" // tpm_*
@@ -172,8 +173,11 @@ prepareboot(void)
     // Change TPM phys. presence state befor leaving BIOS
     tpm_prepboot();
 
-    // Run BCVs
+    // Run BCVs, then finish any remaining firmware work before returning
+    // temporary allocations to the OS. Option ROMs can call BIOS services.
     bcv_prepboot();
+    finish_preempt();
+    wait_threads();
 
     // Finalize data structures before boot
     cdrom_prepboot();
