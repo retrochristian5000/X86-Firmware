@@ -399,16 +399,17 @@ cirrus_switch_mode(struct cirrus_mode_s *table, int flags)
 {
     u8 hdr = GET_GLOBAL(table->hidden_dac);
     u8 mask = 0xff;
+    // Unlock Cirrus extensions before identifying the controller.
+    stdvga_sequ_write(0x06, 0x12);
     int gd5446 = (stdvga_crtc_read(stdvga_get_crtc(), 0x27) & 0xfc)
         == 0xb8;
 
-    // Start a new DAC address cycle before accessing the pixel mask.
-    outb(0, VGAREG_DAC_WRITE_ADDRESS);
-    if (flags & MF_NOPALETTE)
+    if (gd5446 && (flags & MF_NOPALETTE)) {
+        // Interrupt any pending HDR access before reading the pixel mask.
+        outb(0, VGAREG_DAC_WRITE_ADDRESS);
         mask = stdvga_pelmask_read();
+    }
     stdvga_attrindex_write(0x00);
-    // Unlock cirrus special
-    stdvga_sequ_write(0x06, 0x12);
     cirrus_switch_mode_setregs(GET_GLOBAL(table->seq), VGAREG_SEQU_ADDRESS);
     cirrus_switch_mode_setregs(GET_GLOBAL(table->graph), VGAREG_GRDC_ADDRESS);
     cirrus_switch_mode_setregs(GET_GLOBAL(table->crtc), stdvga_get_crtc());
@@ -421,13 +422,17 @@ cirrus_switch_mode(struct cirrus_mode_s *table, int flags)
             hdr = 0xe0;
     }
     // Re-enter the pixel-mask access state before the four HDR reads.
-    outb(0, VGAREG_DAC_WRITE_ADDRESS);
+    if (gd5446)
+        outb(0, VGAREG_DAC_WRITE_ADDRESS);
+    else
+        stdvga_pelmask_write(0x00); // Preserve older Cirrus initialization.
     stdvga_pelmask_read();
     stdvga_pelmask_read();
     stdvga_pelmask_read();
     stdvga_pelmask_read();
     stdvga_pelmask_write(hdr);
-    outb(0, VGAREG_DAC_WRITE_ADDRESS);
+    if (gd5446)
+        outb(0, VGAREG_DAC_WRITE_ADDRESS);
     stdvga_pelmask_write(mask);
 
     u8 memmodel = GET_GLOBAL(table->info.memmodel);
