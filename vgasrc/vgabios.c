@@ -121,7 +121,8 @@ set_active_page(u8 page)
     // Calculate memory address of start of page
     struct cursorpos cp = {0, 0, page};
     int address = (int)text_address(cp);
-    vgahw_set_displaystart(curmode_g, address);
+    if (vgahw_set_displaystart(curmode_g, address))
+        return;
 
     // And change the BIOS page
     SET_BDA(video_pagestart, address);

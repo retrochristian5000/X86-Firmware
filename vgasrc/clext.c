@@ -338,8 +338,10 @@ clext_get_linelength(struct vgamode_s *curmode_g)
 int
 clext_set_linelength(struct vgamode_s *curmode_g, int val)
 {
+    val = cirrus_pitch_encode(val, stdvga_vram_ratio(curmode_g));
+    if (val < 0)
+        return -1;
     u16 crtc_addr = stdvga_get_crtc();
-    val = DIV_ROUND_UP(val * stdvga_vram_ratio(curmode_g), 8);
     stdvga_crtc_write(crtc_addr, 0x13, val);
     stdvga_crtc_mask(crtc_addr, 0x1b, 0x10, (val & 0x100) >> 4);
     return 0;
@@ -360,8 +362,10 @@ clext_get_displaystart(struct vgamode_s *curmode_g)
 int
 clext_set_displaystart(struct vgamode_s *curmode_g, int val)
 {
+    val = cirrus_start_encode(val, stdvga_vram_ratio(curmode_g));
+    if (val < 0)
+        return -1;
     u16 crtc_addr = stdvga_get_crtc();
-    val = val * stdvga_vram_ratio(curmode_g) / 4;
     stdvga_crtc_write(crtc_addr, 0x0d, val);
     stdvga_crtc_write(crtc_addr, 0x0c, val >> 8);
     // Screen Start A[19:16] lives in CR1D[7] and CR1B[3:2,0].

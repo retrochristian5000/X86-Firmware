@@ -23,4 +23,22 @@ cirrus_start_cr1d(unsigned int addr)
     return (addr & 0x80000) >> 12;
 }
 
+// CL-GD5446 TRM 4.40: CR13 and CR1B[4] encode a nine-bit pitch.
+// Check the byte request before scaling so it cannot wrap the register.
+static inline int
+cirrus_pitch_encode(int bytes, int ratio)
+{
+    if (bytes <= 0 || ratio <= 0 || bytes > (0x1ff * 8) / ratio)
+        return -1;
+    return (bytes * ratio + 7) / 8;
+}
+
+static inline int
+cirrus_start_encode(int bytes, int ratio)
+{
+    if (bytes < 0 || ratio <= 0 || bytes > (0xfffff * 4 + 3) / ratio)
+        return -1;
+    return bytes * ratio / 4;
+}
+
 #endif

@@ -289,6 +289,8 @@ vbe_104f06(struct bregs *regs)
     if (! curmode_g)
         goto fail;
     int bpp = vga_bpp(curmode_g);
+    if (bpp <= 0 || (regs->bl != 0x01 && !regs->cx))
+        goto fail;
 
     if (regs->bl == 0x00) {
         int ret = vgahw_set_linelength(curmode_g
@@ -301,12 +303,14 @@ vbe_104f06(struct bregs *regs)
             goto fail;
     }
     int linelength = vgahw_get_linelength(curmode_g);
-    if (linelength < 0)
+    if (linelength <= 0 || linelength > 0xffff
+        || (linelength * 8) / bpp > 0xffff)
         goto fail;
 
+    u32 lines = GET_GLOBAL(VBE_total_memory) / linelength;
     regs->bx = linelength;
     regs->cx = (linelength * 8) / bpp;
-    regs->dx = GET_GLOBAL(VBE_total_memory) / linelength;
+    regs->dx = lines > 0xffff ? 0xffff : lines;
     regs->ax = 0x004f;
     return;
 fail:
@@ -321,18 +325,23 @@ vbe_104f07(struct bregs *regs)
         goto fail;
     int bpp = vga_bpp(curmode_g);
     int linelength = vgahw_get_linelength(curmode_g);
-    if (linelength < 0)
+    if (linelength <= 0 || bpp <= 0)
         goto fail;
 
     int ret;
     switch (regs->bl) {
     case 0x80:
-    case 0x00:
+    case 0x00: {
+        u32 xoffset = DIV_ROUND_UP(regs->cx * bpp, 8);
+        // The hardware interface takes a signed byte offset.
+        if (regs->dx > (0x7fffffffU - xoffset) / linelength)
+            goto fail;
         ret = vgahw_set_displaystart(
-            curmode_g, DIV_ROUND_UP(regs->cx * bpp, 8) + linelength * regs->dx);
+            curmode_g, xoffset + (u32)linelength * regs->dx);
         if (ret)
             goto fail;
         break;
+    }
     case 0x01:
         ret = vgahw_get_displaystart(curmode_g);
         if (ret < 0)
