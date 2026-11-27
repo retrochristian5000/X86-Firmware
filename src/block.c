@@ -575,6 +575,8 @@ process_op_32(struct disk_op_s *op)
 {
     ASSERT32FLAT();
     switch (op->drive_fl->type) {
+    case DTYPE_RAMDISK:
+        return ramdisk_process_op(op);
     case DTYPE_VIRTIO_BLK:
         return virtio_blk_process_op(op);
     case DTYPE_AHCI:
@@ -608,8 +610,6 @@ process_op_16(struct disk_op_s *op)
         return floppy_process_op(op);
     case DTYPE_ATA:
         return ata_process_op(op);
-    case DTYPE_RAMDISK:
-        return ramdisk_process_op(op);
     case DTYPE_CDEMU:
         return cdemu_process_op(op);
     default:
