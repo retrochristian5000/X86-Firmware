@@ -22,6 +22,8 @@ void ct1741_reset(CT1741Command *state)
     state->args[3] = 0;
     state->action = 0;
     state->speaker = 0;
+    state->dma_id_value = 0xaa;
+    state->dma_id_mask = 0x96;
     state->test_register = 0;
     state->response[1] = 0;
     reply(state, 0xaa);
@@ -37,6 +39,15 @@ static void complete(CT1741Command *state)
     switch (cmd) {
     case 0xe0:
         reply(state, (uint8_t)~a);
+        break;
+    case 0xe2:
+        /* Undocumented DMA identification: cumulative modulo-256 sum
+         * with a rotating XOR mask. See README compatibility reference. */
+        state->dma_id_value += (uint8_t)(a ^ state->dma_id_mask);
+        state->dma_id_mask = (uint8_t)((state->dma_id_mask >> 2) |
+                                      (state->dma_id_mask << 6));
+        state->args[0] = state->dma_id_value;
+        state->action = CT1741_ACTION_DMA_ID;
         break;
     case 0xe4:
         state->test_register = a;

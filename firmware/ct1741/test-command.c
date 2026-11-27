@@ -82,5 +82,26 @@ int main(void)
     ct1741_reset(&state);
     expect(&state, 0xaa);
     assert(!ct1741_take_action(&state));
+    /* Independent known vectors: the mask repeats every four requests. */
+    {
+        const uint8_t inputs[] = { 0x00, 0x55, 0xff, 0x5a, 0x00 };
+        const uint8_t outputs[] = { 0x40, 0x30, 0xc6, 0xc6, 0x5c };
+        unsigned int i;
+
+        for (i = 0; i < sizeof(inputs); i++) {
+            assert(ct1741_accept(&state, 0xe2));
+            assert(!ct1741_take_action(&state));
+            assert(ct1741_accept(&state, inputs[i]));
+            assert(ct1741_take_action(&state) == CT1741_ACTION_DMA_ID);
+            assert(state.args[0] == outputs[i]);
+            assert(!ct1741_take(&state, &value));
+        }
+    }
+    ct1741_reset(&state);
+    expect(&state, 0xaa);
+    assert(ct1741_accept(&state, 0xe2));
+    assert(ct1741_accept(&state, 0x00));
+    assert(ct1741_take_action(&state) == CT1741_ACTION_DMA_ID);
+    assert(state.args[0] == 0x40);
     return 0;
 }

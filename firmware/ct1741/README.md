@@ -54,7 +54,7 @@ reports the provisional compatibility version 4.05 in major/minor order;
 E4h stores a test byte and E8h reads it back. The version is not a claim
 of equivalence to the original Creative 4.05 firmware. The host test
 checks response ordering, all 256 identification values, parameter
-framing, reset and backpressure. PCM commands now produce hardware actions through the private v1 mailbox below. Known unsupported parameter frames (including ADC and DMA identification) are consumed without performing those operations. Unknown commands remain unsupported.
+framing, reset and backpressure. PCM commands now produce hardware actions through the private v1 mailbox below. Known unsupported parameter frames (including ADC) are consumed without performing those operations. Unknown commands remain unsupported.
 
 ## Integration boundary
 
@@ -81,7 +81,19 @@ DMA, sample conversion, speaker control and IRQ acknowledgement. Actions:
 1 rate (big-endian), 2 time constant, 3 legacy block length (little-endian
 minus one), 4 PCM start (command, mode, length low, length high),
 5 legacy start (command, length low, length high), 6 DMA control
-(command), 7 speaker (0/1), 8 test IRQ (0=8-bit, 1=16-bit).
+(command), 7 speaker (0/1), 8 test IRQ (0=8-bit, 1=16-bit), 9 DMA identification byte.
 Playback supports B0/B2/B4/B6 and C0/C2/C4/C6, legacy 14h/1Ch/90h/91h,
 40h/41h/48h and pause/resume/exit commands. Capture, direct DAC, ADPCM,
-E2h identification DMA and cycle-accurate timers remain unimplemented.
+cycle-accurate timers remain unimplemented.
+
+### DMA identification (E2h)
+
+The MCU computes a cumulative eight-bit response, initialized to AAh,
+using XOR masks 96h, A5h, 69h, 5Ah in repeating order. Reset restarts
+this sequence. The response is committed as action 9 with argument 0;
+no host data-port reply or audio IRQ is generated. The board transfers
+one byte on the configured low ISA DMA channel, subject to its DMA
+controller. This is an extension of the private v1 mailbox, not a
+physical CT1741 register definition. Compatibility reference (undocumented
+command): https://dosbox-x.com/doxygen/html/sblaster_8cpp_source.html .
+Physical CT1741 verification is still needed.

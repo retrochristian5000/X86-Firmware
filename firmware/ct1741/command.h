@@ -11,6 +11,8 @@ typedef struct {
     uint8_t args[4];
     uint8_t action;
     uint8_t speaker;
+    uint8_t dma_id_value;
+    uint8_t dma_id_mask;
     uint8_t test_register;
     uint8_t response[2];
     uint8_t response_count;
@@ -34,6 +36,7 @@ uint8_t ct1741_take(CT1741Command *state, uint8_t *value);
 #define CT1741_ACTION_DMA_CONTROL 6
 #define CT1741_ACTION_SPEAKER 7
 #define CT1741_ACTION_IRQ 8
+#define CT1741_ACTION_DMA_ID 9
 
 uint8_t ct1741_take_action(CT1741Command *state);
 
