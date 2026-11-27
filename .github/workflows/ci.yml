@@ -120,6 +120,20 @@ jobs:
       - name: Verify CSM ABI packing boundaries
         run: cc -std=c11 -Wall -Wextra -Werror -Isrc -fsyntax-only scripts/test-legacybios-pack.c
 
+      - name: Reject unreviewed forced-inline declarations
+        shell: bash
+        run: |
+          # The current firmware has no mandatory inline annotations.
+          # Any future exception must be reviewed with ABI and ROM-size
+          # evidence rather than restoring a general-purpose macro.
+          status=0
+          git grep -n -E '\b(__always_inline|always_inline|__always_inline__)\b' -- src vgasrc || status=$?
+          case "$status" in
+            0) printf '%s\n' 'Forced inline declaration requires ABI and ROM-size review.' >&2; exit 1 ;;
+            1) ;;
+            *) exit "$status" ;;
+          esac
+
       - name: Verify firmware declaration attributes
         run: |
           cc -std=gnu11 -Wall -Wextra -Werror -Wreturn-type \
