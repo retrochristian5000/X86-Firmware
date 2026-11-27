@@ -150,6 +150,14 @@ jobs:
             -o "$test_bin" tests/pci-bar-probe-test.c
           "$test_bin"
 
+      - name: Verify ISA and PCI memory window separation
+        run: |
+          test_bin="$(mktemp)"
+          trap 'rm -f "$test_bin"' EXIT
+          cc -std=gnu11 -Wall -Wextra -Werror -Isrc \
+            -o "$test_bin" tests/pci-mem-window-test.c
+          "$test_bin"
+
       - name: Build SeaBIOS
         run: WHP_ROM_SIZE_REPORT=1 make -j2
 

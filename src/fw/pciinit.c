@@ -23,6 +23,7 @@
 #include "romfile.h" // romfile_loadint
 #include "isa-irq.h" // piix_reserved_irqs
 #include "pci-bar-probe.h" // pci_bar_probe_mask
+#include "pci-mem-window.h" // pci_mem32_window
 #include "string.h" // memset
 #include "util.h" // pci_setup
 #include "x86.h" // outb
@@ -789,6 +790,8 @@ static u64 pci_region_sum(struct pci_region *r)
     u64 sum = 0;
     struct pci_region_entry *entry;
     hlist_for_each_entry(entry, &r->list, node) {
+        if (entry->size > ~0ULL - sum)
+            return ~0ULL;
         sum += entry->size;
     }
     return sum;
@@ -1034,6 +1037,12 @@ static int pci_bios_check_devices(struct pci_bus *busses)
                 align = top_align;
             if (align > sum && hotplug_support && !resource_optional)
                 sum = align; /* reserve min size for hot-plug */
+            // Check bridge size rounding before it can wrap to zero.
+            if (sum > ~0ULL - (align - 1)
+                || size > ~0ULL - (align - 1)) {
+                dprintf(1, "PCI: bridge resource size exceeds address range\n");
+                return -1;
+            }
             if (size > sum) {
                 dprintf(2, "PCI: QEMU resource reserve cap: "
                         "size %08llx type %s\n",
@@ -1104,17 +1113,19 @@ static int pci_bios_init_root_regions_mem(struct pci_bus *bus)
         r_end = r_start;
         r_start = &bus->r[PCI_REGION_TYPE_PREFMEM];
     }
-    u64 sum = pci_region_sum(r_end);
-    u64 align = pci_region_align(r_end);
-    r_end->base = ALIGN_DOWN((pcimem_end - sum), align);
-    sum = pci_region_sum(r_start);
-    align = pci_region_align(r_start);
-    r_start->base = ALIGN_DOWN((r_end->base - sum), align);
-
-    if ((r_start->base < pcimem_start) ||
-         (r_start->base > pcimem_end))
-        // Memory range requested is larger than available.
+    struct pci_mem_window window;
+    if (pci_mem32_window(e820_list, e820_count, pcimem_start, pcimem_end,
+                         pci_region_sum(r_start), pci_region_align(r_start),
+                         pci_region_sum(r_end), pci_region_align(r_end),
+                         &window))
         return -1;
+    r_start->base = window.lower_base;
+    r_end->base = window.upper_base;
+    if (window.start != pcimem_start || window.end != pcimem_end)
+        dprintf(1, "PCI: using unoccupied 32-bit window %016llx - %016llx\n",
+                window.start, window.end);
+    pcimem_start = window.start;
+    pcimem_end = window.end;
     return 0;
 }
 
@@ -1191,6 +1202,9 @@ static void pci_bios_map_devices(struct pci_bus *busses)
 
         u64 sum_mem = pci_region_sum(&r64_mem);
         u64 sum_pref = pci_region_sum(&r64_pref);
+        if (sum_mem == ~0ULL || sum_pref == ~0ULL
+            || sum_pref > ~0ULL - sum_mem)
+            panic("PCI: 64-bit resource size exceeds address range\n");
         u64 align_mem = pci_region_align(&r64_mem);
         u64 align_pref = pci_region_align(&r64_pref);
 
