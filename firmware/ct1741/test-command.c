@@ -103,5 +103,18 @@ int main(void)
     assert(ct1741_accept(&state, 0x00));
     assert(ct1741_take_action(&state) == CT1741_ACTION_DMA_ID);
     assert(state.args[0] == 0x40);
+    for (unsigned int i = 0; i < 256; i++) {
+        assert(ct1741_accept(&state, 0x10));
+        assert(!ct1741_take_action(&state));
+        assert(ct1741_accept(&state, (uint8_t)i));
+        assert(!ct1741_accept(&state, 0xe1));
+        assert(ct1741_take_action(&state) == CT1741_ACTION_DIRECT_DAC);
+        assert(state.args[0] == i);
+        assert(!ct1741_take(&state, &value));
+    }
+    assert(ct1741_accept(&state, 0x10));
+    ct1741_reset(&state);
+    expect(&state, 0xaa);
+    assert(!ct1741_take_action(&state));
     return 0;
 }

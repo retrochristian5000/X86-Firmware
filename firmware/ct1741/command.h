@@ -37,6 +37,7 @@ uint8_t ct1741_take(CT1741Command *state, uint8_t *value);
 #define CT1741_ACTION_SPEAKER 7
 #define CT1741_ACTION_IRQ 8
 #define CT1741_ACTION_DMA_ID 9
+#define CT1741_ACTION_DIRECT_DAC 10
 
 uint8_t ct1741_take_action(CT1741Command *state);
 

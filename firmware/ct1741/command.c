@@ -52,6 +52,9 @@ static void complete(CT1741Command *state)
     case 0xe4:
         state->test_register = a;
         break;
+    case 0x10:
+        state->action = CT1741_ACTION_DIRECT_DAC;
+        break;
     case 0x40:
         state->action = CT1741_ACTION_TIME_CONST;
         break;

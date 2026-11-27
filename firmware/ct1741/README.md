@@ -83,8 +83,7 @@ minus one), 4 PCM start (command, mode, length low, length high),
 5 legacy start (command, length low, length high), 6 DMA control
 (command), 7 speaker (0/1), 8 test IRQ (0=8-bit, 1=16-bit), 9 DMA identification byte.
 Playback supports B0/B2/B4/B6 and C0/C2/C4/C6, legacy 14h/1Ch/90h/91h,
-40h/41h/48h and pause/resume/exit commands. Capture, direct DAC, ADPCM,
-cycle-accurate timers remain unimplemented.
+40h/41h/48h and pause/resume/exit commands. Capture, ADPCM and cycle-accurate timers remain unimplemented.
 
 ### DMA identification (E2h)
 
@@ -97,3 +96,18 @@ controller. This is an extension of the private v1 mailbox, not a
 physical CT1741 register definition. Compatibility reference (undocumented
 command): https://dosbox-x.com/doxygen/html/sblaster_8cpp_source.html .
 Physical CT1741 verification is still needed.
+
+### Direct DAC playback and host command completion
+
+Command 10h consumes one unsigned eight-bit sample and publishes mailbox
+action 10 (argument 0). The host controls the sample cadence; this is
+not a DMA transfer and generates no DMA request or IRQ. The hardware
+holds the value until the next direct sample, DMA playback or reset.
+The existing sample rate commands do not control direct-DAC cadence.
+
+The optional v1 completion extension uses XDATA 0105h: firmware writes
+A5h once after initialization to advertise the handshake, then writes
+00h after each accepted input byte has been processed and any hardware
+action has been committed. This lets the board report busy until the
+command byte is actually processed, rather than just fetched. Old ROMs
+that do not advertise the extension retain their old latch behavior.

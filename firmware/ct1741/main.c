@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: LGPL-3.0-or-later */
-/* CT1741 identification firmware; compiled only for the MCS-51 core. */
+/* CT1741 command and playback firmware for the MCS-51 core. */
 #include "command.h"
 
 /*
@@ -16,6 +16,8 @@ __xdata __at (0x0101) volatile uint8_t ct1741_arg0;
 __xdata __at (0x0102) volatile uint8_t ct1741_arg1;
 __xdata __at (0x0103) volatile uint8_t ct1741_arg2;
 __xdata __at (0x0104) volatile uint8_t ct1741_arg3;
+/* Optional completion handshake: A5h enables it, 00h completes a byte. */
+__xdata __at (0x0105) volatile uint8_t ct1741_completion;
 
 #define HOST_OUTPUT_FULL 0x01
 #define HOST_INPUT_READY 0x02
@@ -28,6 +30,7 @@ void main(void)
 
     ct1741_p1 = 0xff; /* Release quasi-bidirectional input pins. */
     ct1741_reset(&command);
+    ct1741_completion = 0xa5;
 
     for (;;) {
         uint8_t status = ct1741_p1;
@@ -51,6 +54,7 @@ void main(void)
                 ct1741_arg3 = command.args[3];
                 ct1741_action = action;
             }
+            ct1741_completion = 0;
         }
     }
 }
