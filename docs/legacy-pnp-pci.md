@@ -6,21 +6,33 @@ CONFIG_PNPBIOS_RUNTIME option is disabled by default. On a QEMU PIIX3
 or PIIX4 platform with the router at 00:01.0, it now publishes a separate
 aligned installation structure after PCI initialization.
 
-Functions 00h and 01h report two fixed nodes: PNP0A03 PCI root bus
-(handle 0, configuration I/O CF8h–CFFh) and PNP0A00 ISA bus (handle 1,
-no individually claimed resources). Each has three terminated resource
-blocks and identical current and boot configuration. Enumeration returns
-FFh after the ISA node. Function 02h rejects attempts to configure either
-bus; no hardware registers are written by these runtime calls.
+Functions 00h and 01h preserve the PCI root (handle 0, PNP0A03) and
+ISA bus (handle 1, PNP0A00). With the QEMU boot-time presence file
+`etc/isa-pnp-core-v1` (one byte, bits 0–3), these fixed nodes are added:
+
+| Handle | PnP ID | Allocated resources |
+|---|---|---|
+| 2 | PNP0000 | 20–21h, A0–A1h, 4D0–4D1h; IRQ2 cascade |
+| 3 | PNP0200 | 00–0Fh, 81–83h, 87h, 89–8Bh, 8Fh, C0–DFh; DMA4 cascade |
+| 4 | PNP0100 | 40–43h; IRQ0 |
+| 5 | PNP0B00 | 70–71h; IRQ8 |
+
+The BIOS reports the actual count and maximum node size, skips absent
+handles and ends enumeration with FFh. Invalid or missing presence files
+fall back to the two original bus nodes. Current and boot configurations
+are identical; function 02h rejects modifications to fixed nodes.
+Each has three terminated resource blocks. No runtime hardware writes
+or expansion-card identification are performed. DMA1, DMA5 and other
+peripheral channels are not claimed by the DMA controller node.
 
 Function 40h returns the six-byte ISA configuration structure (revision 1,
 zero assigned card select numbers, invalid zero read-data port, zero
 reserved word). A zero count does not mean that no legacy ISA devices
 are present. No ISA PnP isolation or configuration is performed.
 
-This is only a partial inventory, not a compliant PnP BIOS. PIC, PIT,
-RTC, DMA, keyboard and other motherboard devices, ISA PnP card isolation
-and ESCD services remain to be implemented. Do not enable runtime
+This remains a partial inventory, not a compliant PnP BIOS. Keyboard,
+other motherboard devices, ISA PnP card isolation and ESCD services
+remain to be implemented. Do not enable runtime
 discovery for normal guests or assume this resolves NDIS calibration
 failures.
 
@@ -109,3 +121,7 @@ settings are changed by this firmware work.
 
 Reference: Plug and Play BIOS Specification 1.0A, May 5, 1994.
 https://www.osdever.net/documents/PNPBIOSSpecification-v1.0a.pdf
+
+The fixed node host regression is `tests/pnp-fixed-nodes-test.c`.
+The real-mode regression `scripts/test-isa-pnp.py` requires the matching
+QEMU build that publishes the presence file and a runtime-enabled ROM.

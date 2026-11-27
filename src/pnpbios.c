@@ -124,7 +124,7 @@ pnp_runtime_setup(void)
 #if CONFIG_PNPBIOS_RUNTIME && !MODESEGMENT
     if (pnp_nodes_setup()) {
         PnpRuntimeHeader = PNPHEADER;
-        dprintf(1, "Experimental PnP BIOS: PCI and ISA bus nodes available\n");
+        dprintf(1, "Experimental PnP BIOS: fixed system nodes available\n");
     }
 #endif
 }
