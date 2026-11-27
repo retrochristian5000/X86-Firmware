@@ -22,6 +22,7 @@
 #include "paravirt.h" // RamSize
 #include "romfile.h" // romfile_loadint
 #include "isa-irq.h" // piix_reserved_irqs
+#include "pci-bar-probe.h" // pci_bar_probe_mask
 #include "string.h" // memset
 #include "util.h" // pci_setup
 #include "x86.h" // outb
@@ -94,9 +95,7 @@ static void
 pci_set_io_region_addr(struct pci_device *pci, int bar, u64 addr, int is64)
 {
     u32 ofs = pci_bar(pci, bar);
-    pci_config_writel(pci->bdf, ofs, addr);
-    if (is64)
-        pci_config_writel(pci->bdf, ofs + 4, addr >> 32);
+    pci_bar_assign(pci->bdf, ofs, addr, is64);
 }
 
 
@@ -720,7 +719,6 @@ pci_bios_get_bar(struct pci_device *pci, int bar,
 
     if (bar == PCI_ROM_SLOT) {
         mask = PCI_ROM_ADDRESS_MASK;
-        pci_config_writel(bdf, ofs, mask);
     } else {
         if (old & PCI_BASE_ADDRESS_SPACE_IO) {
             mask = PCI_BASE_ADDRESS_IO_MASK;
@@ -739,16 +737,11 @@ pci_bios_get_bar(struct pci_device *pci, int bar,
             *ptype = type;
             return;
         }
-        pci_config_writel(bdf, ofs, ~0);
     }
-    u64 val = pci_config_readl(bdf, ofs);
-    pci_config_writel(bdf, ofs, old);
+    u64 val = pci_bar_probe_mask(bdf, ofs,
+                                bar == PCI_ROM_SLOT ? (u32)mask : ~0U,
+                                is64);
     if (is64) {
-        u32 hold = pci_config_readl(bdf, ofs + 4);
-        pci_config_writel(bdf, ofs + 4, ~0);
-        u32 high = pci_config_readl(bdf, ofs + 4);
-        pci_config_writel(bdf, ofs + 4, hold);
-        val |= ((u64)high << 32);
         mask |= ((u64)0xffffffff << 32);
         *psize = (~(val & mask)) + 1;
     } else {
