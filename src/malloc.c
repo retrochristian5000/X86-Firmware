@@ -15,6 +15,7 @@
 #include "stacks.h" // wait_preempt
 #include "std/optionrom.h" // OPTION_ROM_ALIGN
 #include "string.h" // memset
+#include "umb-alloc.h" // umb_rom_end
 
 // Information on a reserved area.
 struct allocinfo_s {
@@ -53,8 +54,13 @@ alloc_new(struct zone_s *zone, u32 size, u32 align, struct allocinfo_s *fill)
 {
     struct allocinfo_s *info;
     hlist_for_each_entry(info, &zone->head, node) {
-        u32 alloc_end = info->range_start + info->alloc_size;
         u32 range_end = info->range_end;
+        if (info->range_start > range_end ||
+            info->alloc_size > range_end - info->range_start)
+            continue;
+        u32 alloc_end = info->range_start + info->alloc_size;
+        if (size > range_end - alloc_end)
+            continue;
         u32 new_range_end = ALIGN_DOWN(range_end - size, align);
         if (new_range_end >= alloc_end && new_range_end <= range_end) {
             // Found space - now reserve it.
@@ -195,8 +201,13 @@ zonelow_expand(u32 size, u32 align, struct allocinfo_s *fill)
     if (!info)
         return 0;
     u32 oldpos = info->range_end;
-    u32 newpos = ALIGN_DOWN(oldpos - size, align);
+    if (info->range_start > oldpos ||
+        info->alloc_size > oldpos - info->range_start)
+        return 0;
     u32 bottom = info->range_start + info->alloc_size;
+    if (size > oldpos)
+        return 0;
+    u32 newpos = ALIGN_DOWN(oldpos - size, align);
     if (newpos >= bottom && newpos <= oldpos)
         // Space already present.
         return alloc_new(&ZoneLow, size, align, fill);
@@ -204,11 +215,16 @@ zonelow_expand(u32 size, u32 align, struct allocinfo_s *fill)
     u32 ebda_pos = (u32)MAKE_FLATPTR(ebda_seg, 0);
     u8 ebda_size = GET_EBDA(ebda_seg, size);
     u32 ebda_end = ebda_pos + ebda_size * 1024;
-    if (ebda_end != bottom)
+    if (ebda_end != bottom) {
         // Something else is after ebda - can't use any existing space.
+        if (size > ebda_end)
+            return 0;
         newpos = ALIGN_DOWN(ebda_end - size, align);
+    }
     u32 newbottom = ALIGN_DOWN(newpos, 1024);
-    u32 newebda = ALIGN_DOWN(newbottom - ebda_size * 1024, 1024);
+    if (newbottom < ebda_size * 1024u)
+        return 0;
+    u32 newebda = ALIGN_DOWN(newbottom - ebda_size * 1024u, 1024);
     if (newebda < BUILD_EBDA_MINIMUM)
         // Not enough space.
         return 0;
@@ -237,7 +253,7 @@ u32
 malloc_palloc(struct zone_s *zone, u32 size, u32 align)
 {
     ASSERT32FLAT();
-    if (!size)
+    if (!size || !align || (align & (align - 1)))
         return 0;
 
     // Find and reserve space for main allocation
@@ -364,9 +380,13 @@ static struct allocinfo_s *RomBase;
 u32
 rom_get_max(void)
 {
-    if (CONFIG_MALLOC_UPPERMEMORY)
+    if (CONFIG_MALLOC_UPPERMEMORY) {
+        if (!RomBase || RomBase->range_end <
+            BUILD_ROM_START + OPROM_HEADER_RESERVE)
+            panic("Invalid upper memory allocation boundary\n");
         return ALIGN_DOWN(RomBase->range_end - OPROM_HEADER_RESERVE
                           , OPTION_ROM_ALIGN);
+    }
     return SYMBOL(final_readonly_start);
 }
 
@@ -381,12 +401,14 @@ rom_get_last(void)
 struct rom_header *
 rom_reserve(u32 size)
 {
-    u32 newend = ALIGN(RomEnd + size, OPTION_ROM_ALIGN);
-    if (newend > rom_get_max())
+    u32 newend = umb_rom_end(RomEnd, rom_get_max(), size, OPTION_ROM_ALIGN);
+    if (!newend)
         return NULL;
     if (CONFIG_MALLOC_UPPERMEMORY) {
         if (newend < SYMBOL(zonelow_base))
             newend = SYMBOL(zonelow_base);
+        if (newend > RomBase->range_end - OPROM_HEADER_RESERVE)
+            return NULL;
         RomBase->range_start = newend + OPROM_HEADER_RESERVE;
     }
     return (void*)RomEnd;
@@ -568,6 +590,8 @@ malloc_prepboot(void)
     dprintf(3, "malloc finalize\n");
 
     u32 base = rom_get_max();
+    if (base < RomEnd || base > BUILD_BIOS_ADDR)
+        panic("Invalid option ROM range at boot handoff\n");
     memset((void*)RomEnd, 0, base-RomEnd);
     if (CONFIG_MALLOC_UPPERMEMORY) {
         // Place an optionrom signature around used low mem area.
@@ -579,14 +603,20 @@ malloc_prepboot(void)
 
     // Reserve more low-mem if needed.
     u32 endlow = GET_BDA(mem_size_kb)*1024;
-    e820_add(endlow, BUILD_LOWRAM_END-endlow, E820_RESERVED);
+    if (endlow > BUILD_LOWRAM_END)
+        panic("Invalid conventional memory size at boot handoff\n");
+    if (endlow < BUILD_LOWRAM_END)
+        e820_add(endlow, BUILD_LOWRAM_END-endlow, E820_RESERVED);
 
     // Clear unused f-seg ram.
     struct allocinfo_s *info = alloc_find_lowest(&ZoneFSeg);
-    u32 size = info->range_end - info->range_start;
-    memset(memremap(info->range_start, size), 0, size);
-    dprintf(1, "Space available for UMB: %x-%x, %x-%x\n"
-            , RomEnd, base, info->range_start, info->range_end);
+    if (info && info->range_start <= info->range_end) {
+        u32 size = info->range_end - info->range_start;
+        memset(memremap(info->range_start, size), 0, size);
+    }
+    // F-segment space remains reserved BIOS memory, not DOS UMB space.
+    dprintf(1, "Unused option ROM space: %x-%x (PAM policy applies)\n"
+            , RomEnd, base);
 
     // Give back unused high ram.
     info = alloc_find_lowest(&ZoneHigh);
