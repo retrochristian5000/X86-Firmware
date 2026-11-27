@@ -123,6 +123,11 @@ jobs:
       - name: Verify real-mode compiler inlining policy
         run: python3 scripts/test-inline-policy.py
 
+      - name: Verify CPU profile stamp and shadow register ABI
+        run: |
+          python3 scripts/test-cpu-profile.py
+          python3 scripts/test-shadow-call.py
+
       - name: Reject unreviewed forced-inline declarations
         shell: bash
         run: |

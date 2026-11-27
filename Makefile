@@ -176,6 +176,7 @@ all: $(target-y)
 ################ Common build rules
 
 # Verify the build environment works for firmware builds only.
+CFLAGSWHOLE ?=
 ifneq ($(config-only),y)
 TESTGCC:=$(shell OUT="$(OUT)" CC="$(CC)" LD="$(LD)" scripts/test-build.sh)
 ifeq "$(TESTGCC)" "-1"

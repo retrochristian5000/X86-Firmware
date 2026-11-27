@@ -25,9 +25,12 @@
 // Enable shadowing and copy only the ROM-backed parts of the image.
 // Execute from the high ROM alias if any firmware block changes its
 // read mapping. This also works on machines without independent PAM reads.
-static void
-__make_bios_writable_intel(u16 bdf, u32 pam0, u16 copy_mask)
+static void noinline
+__make_bios_writable_intel(u32 bdf_mask, u32 pam0)
 {
+    u16 bdf = bdf_mask;
+    u16 copy_mask = bdf_mask >> 16;
+
     // Write only the PAM bytes, not adjacent chipset registers.
     for (int i = 1; i < 7; i++)
         pci_ioconfig_writeb(bdf, pam0 + i, 0x33);
@@ -60,12 +63,14 @@ make_bios_writable_intel(u16 bdf, u32 pam0)
     if (copy_mask) {
         // Do not execute from any low ROM block while changing its mapping.
         u32 pos = (u32)__make_bios_writable_intel + BIOS_SRC_OFFSET;
-        void (*func)(u16 bdf, u32 pam0, u16 copy_mask) = (void*)pos;
-        func(bdf, pam0, copy_mask);
+        // Leave one regparm register free for the indirect call target.
+        u32 bdf_mask = bdf | ((u32)copy_mask << 16);
+        void (*func)(u32 bdf_mask, u32 pam0) = (void*)pos;
+        func(bdf_mask, pam0);
         return;
     }
     // All firmware blocks already read from RAM; just enable writes.
-    __make_bios_writable_intel(bdf, pam0, 0);
+    __make_bios_writable_intel(bdf, pam0);
 }
 
 static void

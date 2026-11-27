@@ -20,14 +20,17 @@ class CPUProfileTests(unittest.TestCase):
 
         # Test the real recipe, not an independently maintained copy.
         source = (ROOT / "Makefile").read_text(encoding="utf-8")
-        start = source.index("$(OUT)bios-cpu.profile: FORCE")
+        start = source.index("profile-quote =")
         end = source.index("\n$(OUT)%.s:", start)
         with tempfile.TemporaryDirectory(prefix="seabios-cpu-") as tmp:
             work = Path(tmp)
             shutil.copyfile(ROOT / "scripts/cpu-profile.mk",
                             work / "cpu-profile.mk")
             (work / "Makefile").write_text(
-                "OUT=out/\nQ=@\ninclude cpu-profile.mk\n"
+                "OUT=out/\nQ=@\nconfig-only=n\n"
+                "CFLAGS16=-m16\nCFLAGS32SEG=-m32\n"
+                "CFLAGS32FLAT=-m32\nCFLAGSWHOLE=\n"
+                "include cpu-profile.mk\n"
                 "all: $(OUT)sample.o\n.PHONY: all FORCE\n"
                 + source[start:end] +
                 "\n$(OUT)sample.o: $(OUT)bios-cpu.profile sample.c\n"
@@ -38,9 +41,10 @@ class CPUProfileTests(unittest.TestCase):
                 "unsigned probe(unsigned x) { return x + 1; }\n",
                 encoding="utf-8")
 
-            def build(cpu, compiler=cc):
+            def build(cpu, compiler=cc, *flags):
                 return subprocess.run(
-                    [make, "BIOS_CPU=" + cpu, "CC=" + compiler],
+                    [make, "--warn-undefined-variables", "BIOS_CPU=" + cpu,
+                     "CC=" + compiler, *flags],
                     cwd=work, capture_output=True, text=True)
 
             for cpu, count in (
@@ -55,11 +59,20 @@ class CPUProfileTests(unittest.TestCase):
                 self.assertEqual(len((work / "log").read_text().splitlines()),
                                  count)
                 stamp = (work / "out/bios-cpu.profile").read_text()
-                self.assertEqual(stamp.splitlines()[0], cpu)
+                self.assertNotIn("undefined variable", result.stderr)
+                self.assertEqual(stamp.splitlines()[0], "BIOS_CPU=" + cpu)
+                self.assertEqual(sorted(p.name for p in (work / "out").iterdir()),
+                                 ["bios-cpu.profile", "sample.o"])
                 self.assertIn("-march=" + cpu, stamp)
                 if cpu != "i386":
                     for flag in ("-mno-mmx", "-mno-sse", "-mno-sse2"):
                         self.assertIn(flag, stamp)
+            result = build("i386", cc, "CFLAGS32FLAT=-m32 -Oz")
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            self.assertNotIn("undefined variable", result.stderr)
+            self.assertEqual(len((work / "log").read_text().splitlines()), 5)
+            self.assertIn("CFLAGS32FLAT=-m32 -Oz",
+                          (work / "out/bios-cpu.profile").read_text())
             self.assertNotEqual(build("i686").returncode, 0)
             self.assertNotEqual(build("pentium-mmx", "false").returncode, 0)
 
