@@ -31,6 +31,30 @@ the existing six root-bus slot mappings. Q35 and unknown routers
 do not receive this PIIX-specific fallback table. Imported tables
 must use version 1.0 and complete 16-byte routing entries.
 
+PCI BIOS 2.1 B10Fh programs PIIX3/PIIX4 root-bus interrupt routes
+using the published $PIR table, verified router identity, and the
+intersection of the table's IRQ bitmap with the chipset's legal IRQs.
+It sets the target ELCR bit before enabling the requested PIRQ route
+and verifies both writes. On readback failure it attempts to restore
+the original state. Other route registers and ELCR bits are preserved.
+The caller is responsible for resource conflicts and updating Interrupt
+Line registers of all affected PCI functions; the routing is not
+persisted across boots. Secondary-bus routing and other routers are
+not implemented by this service. Unsupported platforms return AH=81h;
+unavailable routes return AH=88h, both with carry set.
+
+B106h explicitly returns AH=81h with carry set: the QEMU PCI host
+does not provide special-cycle broadcasts. B101h continues to report
+mechanism 1 without special-cycle capability bits. No ordinary config
+write is substituted for a broadcast. The reported BIOS version stays
+2.10. See PCI BIOS Specification revision 2.1 sections 4.2.1 and 4.2.3
+and Appendix B.
+
+The host regression is `tests/pci-irq-route-test.c`; build with
+`cc -std=gnu11 -Wall -Wextra -Werror tests/pci-irq-route-test.c -o pci-irq-route-test`.
+It checks the route helper with mocked I/O; real-mode and protected-mode
+BIOS entry-point testing is still required.
+
 During PCI initialization, BAR sizing and assignment temporarily clear
 the I/O and memory decode bits using a 16-bit Command register access.
 Both halves of a 64-bit BAR are probed before either mask is read.
