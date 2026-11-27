@@ -44,10 +44,10 @@ def main():
             check=False, timeout=60,
         )
     if result.returncode == 0x21:
-        print("GD5446B palette transition tests passed")
+        print("GD5446B palette and DDC2B tests passed")
         return 0
     failures = {0x41: "hidden DAC mode", 0x43: "palette preservation",
-                0x45: "grayscale summing"}
+                0x45: "grayscale summing", 0x47: "DDC2B EDID"}
     raise SystemExit(f"Cirrus palette test failed: "
                      f"{failures.get(result.returncode, result.returncode)}")
 
