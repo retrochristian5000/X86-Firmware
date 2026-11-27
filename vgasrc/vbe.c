@@ -460,14 +460,22 @@ vbe_104f15(struct bregs *regs)
 {
     int offset;
 
+    // Cirrus exposes a validated base EDID through DDC2B, not DDC1.
+    if (CONFIG_VGA_CIRRUS &&
+        (regs->cx || GET_GLOBAL(VBE_edid[0]) != 0 ||
+         GET_GLOBAL(VBE_edid[1]) != 0xff))
+        goto err;
+
     switch (regs->bl) {
     case 0x00:
         if (GET_GLOBAL(VBE_edid[0]) != 0x00 ||
             GET_GLOBAL(VBE_edid[1]) != 0xff)
             goto err;
-        regs->bx = 0x0103;
+        regs->bx = CONFIG_VGA_CIRRUS ? 0x0102 : 0x0103;
         break;
     case 0x01:
+        if (CONFIG_VGA_CIRRUS && regs->dx)
+            goto err;
         offset = regs->dx * 128;
         if (offset >= sizeof(VBE_edid))
             goto err;
