@@ -7,17 +7,14 @@
 
 #include "util.h" // dma_setup
 #include "x86.h" // outb
+#include "dma-init.h" // dma_init_controllers
 
 #define PORT_DMA_ADDR_2        0x0004
 #define PORT_DMA_CNT_2         0x0005
 #define PORT_DMA1_MASK_REG     0x000a
 #define PORT_DMA1_MODE_REG     0x000b
 #define PORT_DMA1_CLEAR_FF_REG 0x000c
-#define PORT_DMA1_MASTER_CLEAR 0x000d
 #define PORT_DMA_PAGE_2        0x0081
-#define PORT_DMA2_MASK_REG     0x00d4
-#define PORT_DMA2_MODE_REG     0x00d6
-#define PORT_DMA2_MASTER_CLEAR 0x00da
 
 // Mask the floppy DMA channel without disturbing any other channel.
 void
@@ -65,11 +62,5 @@ dma_floppy(u32 addr, int count, int isWrite)
 void
 dma_setup(void)
 {
-    // first reset the DMA controllers
-    outb(0, PORT_DMA1_MASTER_CLEAR);
-    outb(0, PORT_DMA2_MASTER_CLEAR);
-
-    // then initialize the DMA controllers
-    outb(0xc0, PORT_DMA2_MODE_REG);
-    outb(0x00, PORT_DMA2_MASK_REG);
+    dma_init_controllers();
 }
