@@ -67,8 +67,10 @@ call_bcv(u16 seg, u16 ip)
 
 // Verify that an option rom looks valid
 static int
-is_valid_rom(struct rom_header *rom)
+is_valid_rom(struct rom_header *rom, u32 available)
 {
+    if (available < sizeof(*rom))
+        return 0;
     dprintf(6, "Checking rom %p (sig %x size %d)\n"
             , rom, rom->signature, rom->size);
     if (rom->signature != OPTION_ROM_SIGNATURE)
@@ -76,6 +78,10 @@ is_valid_rom(struct rom_header *rom)
     if (! rom->size)
         return 0;
     u32 len = rom->size * 512;
+    if (len > available) {
+        dprintf(1, "Option ROM size exceeds available image bytes\n");
+        return 0;
+    }
     u8 sum = checksum(rom, len);
     if (sum != 0) {
         dprintf(1, "Found option rom with bad checksum: loc=%p len=%d sum=%x\n"
@@ -86,32 +92,53 @@ is_valid_rom(struct rom_header *rom)
     return 1;
 }
 
-// Check if a valid option rom has a pnp struct; return it if so.
-static struct pnp_data *
-get_pnp_rom(struct rom_header *rom)
+// Check optional structures against the current resident image.
+static int
+rom_has_range(u32 len, u32 offset, u32 size)
 {
-    struct pnp_data *pnp = (void*)((u8*)rom + rom->pnpoffset);
+    return offset <= len && size <= len - offset;
+}
+
+static struct pnp_data *
+get_pnp_at(struct rom_header *rom, u16 offset)
+{
+    u32 len = rom->size * 512;
+    if (!offset || !rom_has_range(len, offset, sizeof(struct pnp_data)))
+        return NULL;
+    struct pnp_data *pnp = (void*)((u8*)rom + offset);
     if (pnp->signature != PNP_SIGNATURE)
         return NULL;
     return pnp;
 }
 
-// Check for multiple pnp option rom headers.
 static struct pnp_data *
-get_pnp_next(struct rom_header *rom, struct pnp_data *pnp)
+get_pnp_rom(struct rom_header *rom)
 {
-    if (! pnp->nextoffset)
-        return NULL;
-    pnp = (void*)((u8*)rom + pnp->nextoffset);
-    if (pnp->signature != PNP_SIGNATURE)
-        return NULL;
-    return pnp;
+    return get_pnp_at(rom, rom->pnpoffset);
+}
+
+// A bounded string is needed for the boot menu and diagnostic output.
+static u16
+rom_productname(struct rom_header *rom, struct pnp_data *pnp)
+{
+    u32 len = rom->size * 512;
+    u16 offset = pnp->productname;
+    u32 i;
+    if (!offset)
+        return 0;
+    for (i = offset; i < len; i++)
+        if (!((u8*)rom)[i])
+            return offset;
+    return 0;
 }
 
 // Check if a valid option rom has a pci struct; return it if so.
 static struct pci_data *
-get_pci_rom(struct rom_header *rom)
+get_pci_rom(struct rom_header *rom, u32 available)
 {
+    if (!rom->pcioffset ||
+        !rom_has_range(available, rom->pcioffset, sizeof(struct pci_data)))
+        return NULL;
     struct pci_data *pd = (void*)((u32)rom + rom->pcioffset);
     if (pd->signature != PCI_ROM_SIGNATURE)
         return NULL;
@@ -125,9 +152,11 @@ get_pci_rom(struct rom_header *rom)
 static int
 init_optionrom(struct rom_header *rom, u16 bdf, int isvga)
 {
-    if (! is_valid_rom(rom))
+    // All callers have copied a bounded, validated image into this area.
+    u32 initial = rom->size * 512;
+    if (!is_valid_rom(rom, rom_get_max() - (u32)rom))
         return -1;
-    struct rom_header *newrom = rom_reserve(rom->size * 512);
+    struct rom_header *newrom = rom_reserve(initial);
     if (!newrom) {
         warn_noalloc();
         return -1;
@@ -141,7 +170,19 @@ init_optionrom(struct rom_header *rom, u16 bdf, int isvga)
         // Only init vga and PnP roms here.
         callrom(newrom, bdf);
 
-    return rom_confirm(newrom->size * 512);
+    // INIT may shrink the resident image or discard it entirely, but it
+    // cannot enlarge the reservation made before calling the ROM.
+    if (newrom->size * 512u > initial) {
+        dprintf(1, "Option ROM reported a resident size larger than INIT\n");
+        newrom->size = initial / 512;
+    }
+    u32 resident = newrom->size * 512;
+    if (rom_confirm(resident))
+        return -1;
+    // Clear released bytes and alignment padding while they are still
+    // within the reservation. Do not touch subsequent PMM allocations.
+    memset((u8*)newrom + resident, 0, initial - resident);
+    return 0;
 }
 
 #define RS_PCIROM (1LL<<33)
@@ -174,14 +215,18 @@ static struct rom_header *
 deploy_romfile(struct romfile_s *file)
 {
     u32 size = file->size;
+    if (size < sizeof(struct rom_header))
+        return NULL;
     struct rom_header *rom = rom_reserve(size);
     if (!rom) {
         warn_noalloc();
         return NULL;
     }
     int ret = file->copy(file, rom, size);
-    if (ret <= 0)
+    if (ret < 0 || (u32)ret != size || !is_valid_rom(rom, size)) {
+        memset(rom, 0, size);
         return NULL;
+    }
     return rom;
 }
 
@@ -254,13 +299,17 @@ map_pcirom(struct pci_device *pci)
     }
 
     u16 bdf = pci->bdf;
-    u32 orig = pci_config_readl(bdf, PCI_ROM_ADDRESS);
+    u32 original = pci_config_readl(bdf, PCI_ROM_ADDRESS);
+    u32 orig = original & PCI_ROM_ADDRESS_MASK;
     pci_config_writel(bdf, PCI_ROM_ADDRESS, ~PCI_ROM_ADDRESS_ENABLE);
     u32 sz = pci_config_readl(bdf, PCI_ROM_ADDRESS);
 
     dprintf(6, "Option rom sizing returned %x %x\n", orig, sz);
-    orig &= ~PCI_ROM_ADDRESS_ENABLE;
     if (!sz || sz == 0xffffffff)
+        goto fail;
+    u32 remaining = -(sz & (u32)PCI_ROM_ADDRESS_MASK);
+    if (!remaining || (remaining & (remaining - 1)) ||
+        (orig & (remaining - 1)) || remaining - 1 > ~orig)
         goto fail;
 
     if (orig == sz || (u32)(orig + 4*1024*1024) < 20*1024*1024) {
@@ -277,35 +326,47 @@ map_pcirom(struct pci_device *pci)
     for (;;) {
         dprintf(5, "Inspecting possible rom at %p (vd=%04x:%04x bdf=%pP)\n"
                 , rom, pci->vendor, pci->device, pci);
+        if (remaining < sizeof(*rom))
+            goto fail;
         if (rom->signature != OPTION_ROM_SIGNATURE) {
             dprintf(6, "No option rom signature (got %x)\n", rom->signature);
             goto fail;
         }
-        struct pci_data *pd = get_pci_rom(rom);
+        struct pci_data *pd = get_pci_rom(rom, remaining);
         if (! pd) {
             dprintf(6, "No valid pci signature found\n");
             goto fail;
         }
 
+        u32 image_size = pd->ilen * 512u;
+        if (!image_size || image_size > remaining ||
+            !rom_has_range(image_size, rom->pcioffset, sizeof(*pd)))
+            goto fail;
+
         if (pd->vendor == pci->vendor && pd->device == pci->device
-            && pd->type == PCIROM_CODETYPE_X86)
-            // A match
+            && pd->type == PCIROM_CODETYPE_X86) {
+            if (!is_valid_rom(rom, image_size))
+                goto fail;
             break;
+        }
         dprintf(6, "Didn't match dev/ven (got %04x:%04x) or type (got %d)\n"
                 , pd->vendor, pd->device, pd->type);
         if (pd->indicator & 0x80) {
             dprintf(6, "No more images left\n");
             goto fail;
         }
-        rom = (void*)((u32)rom + pd->ilen * 512);
+        remaining -= image_size;
+        if (!remaining)
+            goto fail;
+        rom = (void*)((u32)rom + image_size);
     }
 
     rom = copy_rom(rom);
-    pci_config_writel(bdf, PCI_ROM_ADDRESS, orig);
+    pci_config_writel(bdf, PCI_ROM_ADDRESS, original);
     return rom;
 fail:
     // Not valid - restore original and exit.
-    pci_config_writel(bdf, PCI_ROM_ADDRESS, orig);
+    pci_config_writel(bdf, PCI_ROM_ADDRESS, original);
     return NULL;
 }
 
@@ -342,15 +403,14 @@ init_pcirom(struct pci_device *pci, int isvga, u64 *sources)
         // No ROM present.
         return;
     int irq_was_captured = boot_irq_captured();
-    struct pnp_data *pnp = get_pnp_rom(rom);
+    int had_pnp = !!get_pnp_rom(rom);
     setRomSource(sources, rom, RS_PCIROM | (u32)pci);
     init_optionrom(rom, pci->bdf, isvga);
     if (boot_irq_captured() && !irq_was_captured &&
-        !file && !isvga && pnp) {
-        // This PCI rom is misbehaving - recapture the boot irqs
-        char *desc = MAKE_FLATPTR(FLATPTR_TO_SEG(rom), pnp->productname);
-        dprintf(1, "PnP optionrom \"%s\" (bdf %pP) captured int19, restoring\n",
-                desc, pci);
+        !file && !isvga && had_pnp) {
+        // This PCI ROM captured INT 19h despite advertising PnP support.
+        // Its original product name may no longer be resident.
+        dprintf(1, "PnP option ROM %pP captured INT 19h, restoring\n", pci);
         boot_irq_restore();
     }
 }
@@ -390,7 +450,7 @@ optionrom_setup(void)
     u32 pos = post_vga;
     while (pos < rom_get_last()) {
         struct rom_header *rom = (void*)pos;
-        if (! is_valid_rom(rom)) {
+        if (!is_valid_rom(rom, rom_get_last() - pos)) {
             pos += OPTION_ROM_ALIGN;
             continue;
         }
@@ -404,16 +464,21 @@ optionrom_setup(void)
         }
         // PnP rom - check for BEV and BCV boot capabilities.
         int instance = 0;
-        while (pnp) {
-            if (pnp->bev)
-                boot_add_bev(FLATPTR_TO_SEG(rom), pnp->bev, pnp->productname
+        u32 len = rom->size * 512;
+        u32 budget = len / sizeof(*pnp);
+        while (pnp && budget--) {
+            u16 desc = rom_productname(rom, pnp);
+            if (pnp->bev && pnp->bev < len)
+                boot_add_bev(FLATPTR_TO_SEG(rom), pnp->bev, desc
                              , getRomPriority(sources, rom, instance++));
-            else if (pnp->bcv)
-                boot_add_bcv(FLATPTR_TO_SEG(rom), pnp->bcv, pnp->productname
+            else if (pnp->bcv && pnp->bcv < len)
+                boot_add_bcv(FLATPTR_TO_SEG(rom), pnp->bcv, desc
                              , getRomPriority(sources, rom, instance++));
             else
                 break;
-            pnp = get_pnp_next(rom, pnp);
+            if (pnp->nextoffset == (u8*)pnp - (u8*)rom)
+                break;
+            pnp = get_pnp_at(rom, pnp->nextoffset);
         }
     }
 }
@@ -493,7 +558,7 @@ s3_resume_vga(void)
 {
     if (!S3ResumeVga)
         return;
-    if (!VgaROM || ! is_valid_rom(VgaROM))
+    if (!VgaROM || !is_valid_rom(VgaROM, BUILD_BIOS_ADDR - (u32)VgaROM))
         return;
     callrom(VgaROM, 0);
 }
