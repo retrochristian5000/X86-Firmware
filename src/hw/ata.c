@@ -941,7 +941,9 @@ powerup_await_non_bsy(u16 base)
             warn_timeout();
             return -1;
         }
-        yield();
+        // Spin-up is a mechanical-scale wait, not a data transfer.
+        // Yield to other POST threads and avoid continuous ATA port reads.
+        msleep(1);
     }
     dprintf(6, "powerup iobase=%x st=%x\n", base, status);
     return status;
