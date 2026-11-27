@@ -158,6 +158,31 @@ putuint(struct putcinfo *action, u32 val)
     puts(action, d);
 }
 
+// Output a full-width decimal value without a 64-bit division helper.
+// Long division in 16-bit chunks keeps every division within 32 bits.
+static void
+putuint64(struct putcinfo *action, u64 val)
+{
+    if (!(val >> 32)) {
+        putuint(action, (u32)val);
+        return;
+    }
+    char buf[21];
+    char *d = &buf[sizeof(buf) - 1];
+    *d = '\0';
+    union u64_u32_u v = { .val = val };
+    do {
+        u32 rem = v.hi % 10;
+        v.hi /= 10;
+        u32 part = (rem << 16) | (v.lo >> 16);
+        u32 high = part / 10;
+        part = ((part % 10) << 16) | (v.lo & 0xffff);
+        v.lo = (high << 16) | (part / 10);
+        *--d = '0' + part % 10;
+    } while (v.val);
+    puts(action, d);
+}
+
 // Output a single digit hex character.
 static inline void
 putsinglehex(struct putcinfo *action, u32 val, int uc)
@@ -234,7 +259,8 @@ bvprintf(struct putcinfo *action, const char *fmt, va_list args)
         const char *n = s+1;
         int field_width = 0;
         char padchar = ' ';
-        u8 is64 = 0;
+        u8 longs = 0;
+        u8 is_size = 0;
         for (;;) {
             c = GET_GLOBAL(*(u8*)n);
             if (!isdigit(c))
@@ -245,64 +271,74 @@ bvprintf(struct putcinfo *action, const char *fmt, va_list args)
                 field_width = field_width * 10 + c - '0';
             n++;
         }
-        if (c == 'l') {
-            // Ignore long format indicator
+        while (c == 'l' && longs < 2) {
+            longs++;
             n++;
             c = GET_GLOBAL(*(u8*)n);
         }
-        if (c == 'l') {
-            is64 = 1;
+        if (c == 'z') {
+            is_size = 1;
             n++;
             c = GET_GLOBAL(*(u8*)n);
         }
-        s32 val;
+        u64 val;
+        s64 signedval;
         const char *sarg;
         switch (c) {
         case '%':
             putc(action, '%');
             break;
         case 'd':
-            val = va_arg(args, s32);
-            if (is64)
-                va_arg(args, s32);
-            if (val < 0) {
+        case 'i':
+            if (longs == 2)
+                signedval = va_arg(args, s64);
+            else if (longs == 1)
+                signedval = va_arg(args, long);
+            else
+                signedval = va_arg(args, s32);
+            val = (u64)signedval;
+            if (signedval < 0) {
                 putc(action, '-');
-                val = -val;
+                val = 0 - val;
             }
-            putuint(action, val);
+            putuint64(action, val);
             break;
         case 'u':
-            val = va_arg(args, s32);
-            if (is64)
-                va_arg(args, s32);
-            putuint(action, val);
+        case 'X':
+        case 'x':
+            if (longs == 2)
+                val = va_arg(args, u64);
+            else if (longs == 1)
+                val = va_arg(args, unsigned long);
+            else if (is_size)
+                val = va_arg(args, size_t);
+            else
+                val = va_arg(args, u32);
+            if (c == 'u') {
+                putuint64(action, val);
+                break;
+            }
+            uc = (c == 'X');
+            if (val >> 32) {
+                putprettyhex(action, val >> 32, field_width - 8, padchar, uc);
+                puthex(action, (u32)val, 8, uc);
+            } else {
+                putprettyhex(action, (u32)val, field_width, padchar, uc);
+            }
             break;
-        case 'p':
-            val = va_arg(args, s32);
+        case 'p': {
+            void *ptr = va_arg(args, void *);
             if (!MODESEGMENT && GET_GLOBAL(*(u8*)(n+1)) == 'P') {
                 // %pP is 'struct pci_device' printer
-                put_pci_device(action, (void*)val);
+                put_pci_device(action, ptr);
                 n++;
                 break;
             }
             putc(action, '0');
             putc(action, 'x');
-            puthex(action, val, 8, 0);
+            puthex(action, (u32)ptr, 8, 0);
             break;
-        case 'X':
-        case 'x':
-            uc = (c == 'X');
-            val = va_arg(args, s32);
-            if (is64) {
-                u32 upper = va_arg(args, s32);
-                if (upper) {
-                    putprettyhex(action, upper, field_width - 8, padchar, uc);
-                    puthex(action, val, 8, uc);
-                    break;
-                }
-            }
-            putprettyhex(action, val, field_width, padchar, uc);
-            break;
+        }
         case 'c':
             val = va_arg(args, int);
             putc(action, val);
