@@ -17,10 +17,10 @@ $(OUT):
 	mkdir -p "$@"
 
 $(OUT)/command.rel: command.c command.h Makefile | $(OUT)
-	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -c "$(SOURCE_DIR)/command.c"
+	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -c -o command.rel "$(SOURCE_DIR)/command.c"
 
 $(OUT)/main.rel: main.c command.h Makefile | $(OUT)
-	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -c "$(SOURCE_DIR)/main.c"
+	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -c -o main.rel "$(SOURCE_DIR)/main.c"
 
 $(OUT)/ct1741.ihx: $(OUT)/main.rel $(OUT)/command.rel
 	cd "$(OUT)" && $(SDCC) $(MCUFLAGS) -o ct1741.ihx main.rel command.rel
