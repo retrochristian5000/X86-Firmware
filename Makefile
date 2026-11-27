@@ -93,8 +93,24 @@ CFLAGSSEG := $(COMMONCFLAGS) -DMODESEGMENT=1 \
     $(call cc-option,$(CC),-fno-jump-tables,-DMANUAL_NO_JUMP_TABLE) \
     $(call cc-option,$(CC),-fno-tree-switch-conversion,)
 CFLAGS32SEG := $(CFLAGSSEG) -DMODE16=0
+
+# Validate actual object generation: -S does not exercise the assembler
+# and can accept an unusable .code16gcc fallback.
+cc16-option = $(shell printf '%s\n' 'unsigned probe(unsigned x) { return x + 1; }' | \
+    $(CC) -m32 $(BIOS_CPU_CFLAGS) -mregparm=3 -ffreestanding -Os -Werror \
+    $(1) -x c -c -o /dev/null - >/dev/null 2>&1 && printf '%s' '$(1)')
+ifneq ($(config-only),y)
+CFLAGS16_MODE := $(call cc16-option,-m16)
+ifeq ($(CFLAGS16_MODE),)
+CFLAGS16_MODE := $(call cc16-option,-Wa$(COMMA)src/code16gcc.s)
+endif
+ifeq ($(CFLAGS16_MODE),)
+$(error Compiler cannot assemble 16-bit firmware using -m16 or the .code16gcc fallback)
+endif
+endif
+
 CFLAGS16 := $(CFLAGSSEG) -DMODE16=1 \
-    $(call cc-option,$(CC),-m16,-Wa$(COMMA)src/code16gcc.s) \
+    $(CFLAGS16_MODE) \
     $(call cc-option,$(CC),--param large-stack-frame=4,-fno-inline)
 
 # Run with "make V=1" to see the actual compile commands
