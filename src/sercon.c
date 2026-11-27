@@ -8,7 +8,7 @@
 #include "bregs.h" // struct bregs
 #include "stacks.h" // yield
 #include "output.h" // dprintf
-#include "util.h" // irqtimer_calc_ticks
+#include "util.h" // timer_calc
 #include "string.h" // memcpy
 #include "romfile.h" // romfile_loadint
 #include "hw/serialio.h" // SEROFF_IER
@@ -77,26 +77,26 @@ static int sercon_splitmode(void)
 static void sercon_putchar(u8 chr)
 {
     u16 addr = GET_LOW(sercon_port);
-    u32 end = irqtimer_calc_ticks(0x0a);
-
-#if 0
-    /* for visual control sequence debugging */
-    if (chr == '\x1b')
-        chr = '*';
-#endif
-
-    for (;;) {
-        u8 lsr = inb(addr+SEROFF_LSR);
-        if ((lsr & 0x60) == 0x60) {
-            // Success - can write data
-            outb(chr, addr+SEROFF_DATA);
-            break;
-        }
-        if (irqtimer_check(end)) {
-            break;
-        }
-        yield();
+    // THRE is sufficient for writing the next byte; TEMT is only needed
+    // when waiting for the last character to finish on the wire.
+    u8 lsr = inb(addr + SEROFF_LSR);
+    if (lsr == 0xff)
+        return;
+    if (!(lsr & SER_LSR_THRE)) {
+        // The timer ISR also flushes the console. Its own BIOS tick
+        // counter cannot be relied upon to advance while it is running.
+        u32 end = timer_calc(550); // about ten legacy PIT ticks
+        do {
+            if (timer_check(end))
+                return;
+            yield();
+            lsr = inb(addr + SEROFF_LSR);
+            if (lsr == 0xff)
+                return;
+        } while (!(lsr & SER_LSR_THRE));
     }
+    if (!(inb(addr + SEROFF_LCR) & SER_LCR_DLAB))
+        outb(chr, addr + SEROFF_DATA);
 }
 
 static void sercon_term_reset(void)
@@ -631,21 +631,26 @@ sercon_check_event(void)
     // check to see if there is a active serial port
     if (!addr)
         return;
-    if (inb(addr + SEROFF_LSR) == 0xFF)
+    if (inb(addr + SEROFF_LSR) == 0xff ||
+        (inb(addr + SEROFF_LCR) & SER_LCR_DLAB))
         return;
 
     // flush pending output
     sercon_lazy_flush();
 
-    // read all available data
-    while (inb(addr + SEROFF_LSR) & 0x01) {
+    // Read only what fits. Leave further bytes in the UART for a later
+    // poll rather than spinning in the timer ISR and discarding input.
+    while (GET_LOW(rx_bytes) < sizeof(rx_buf)) {
+        u8 lsr = inb(addr + SEROFF_LSR);
+        if (lsr == 0xff || !(lsr & SER_LSR_DR))
+            break;
+        if (inb(addr + SEROFF_LCR) & SER_LCR_DLAB)
+            break;
         byte = inb(addr + SEROFF_DATA);
         u8 rb = GET_LOW(rx_bytes);
-        if (rb < sizeof(rx_buf)) {
-            SET_LOW(rx_buf[rb], byte);
-            SET_LOW(rx_bytes, rb + 1);
-            count++;
-        }
+        SET_LOW(rx_buf[rb], byte);
+        SET_LOW(rx_bytes, rb + 1);
+        count++;
     }
 
     for (;;) {
@@ -667,7 +672,7 @@ sercon_check_event(void)
 
         // Seems we got a escape sequence we didn't recognise.
         //  -> If we received data wait for more, maybe it is just incomplete.
-        if (next_char == 0x1b && count)
+        if (next_char == 0x1b && count && rb < sizeof(rx_buf))
             return;
 
         // Handle input as individual char.
