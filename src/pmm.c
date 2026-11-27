@@ -13,6 +13,7 @@
 #include "string.h" // checksum
 #include "util.h" // pmm_init
 #include "x86.h" // __ffs
+#include "umb-alloc.h" // pmm_paragraph_bytes
 
 extern struct pmmheader PMMHEADER;
 
@@ -57,8 +58,8 @@ handle_pmm00(u16 *args)
         }
         }
     }
-    u32 size = length * 16;
-    if ((s32)size <= 0)
+    u32 size = pmm_paragraph_bytes(length);
+    if (!size)
         return 0;
     u32 align = MALLOC_MIN_ALIGN;
     if (flags & 4) {
