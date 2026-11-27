@@ -184,7 +184,7 @@ endef
 
 # Changing CPU flags must invalidate every generated C/assembly object.
 $(OUT)bios-cpu.profile: FORCE
-	$(Q)set -eu; umask 077; mkdir -p "$(OUT)"; tmp=$(mktemp "$@.XXXXXX"); \
+	$(Q)set -eu; umask 077; mkdir -p "$(OUT)"; tmp=$$(mktemp "$@.XXXXXX"); \
 		trap 'rm -f "$$tmp"' 0; trap 'exit 1' HUP INT TERM; \
 		printf '%s\n' "$(BIOS_CPU)" "$(BIOS_CPU_CFLAGS)" > "$$tmp"; \
 		if ! cmp -s "$$tmp" "$@"; then mv "$$tmp" "$@"; fi
