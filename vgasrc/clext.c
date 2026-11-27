@@ -395,21 +395,40 @@ cirrus_switch_mode_setregs(u16 *data, u16 port)
 }
 
 static void
-cirrus_switch_mode(struct cirrus_mode_s *table)
+cirrus_switch_mode(struct cirrus_mode_s *table, int flags)
 {
+    u8 hdr = GET_GLOBAL(table->hidden_dac);
+    u8 mask = 0xff;
+    int gd5446 = (stdvga_crtc_read(stdvga_get_crtc(), 0x27) & 0xfc)
+        == 0xb8;
+
+    // Start a new DAC address cycle before accessing the pixel mask.
+    outb(0, VGAREG_DAC_WRITE_ADDRESS);
+    if (flags & MF_NOPALETTE)
+        mask = stdvga_pelmask_read();
+    stdvga_attrindex_write(0x00);
     // Unlock cirrus special
     stdvga_sequ_write(0x06, 0x12);
     cirrus_switch_mode_setregs(GET_GLOBAL(table->seq), VGAREG_SEQU_ADDRESS);
     cirrus_switch_mode_setregs(GET_GLOBAL(table->graph), VGAREG_GRDC_ADDRESS);
     cirrus_switch_mode_setregs(GET_GLOBAL(table->crtc), stdvga_get_crtc());
 
-    stdvga_pelmask_write(0x00);
+    if (gd5446) {
+        // TRM 8.9: select the normal LUT and disable cursor/overscan override.
+        stdvga_sequ_mask(0x12, 0x83, 0);
+        // TRM 8.37: RGB555 must not interpret pixel bit 15 as a LUT select.
+        if (hdr == 0xf0)
+            hdr = 0xe0;
+    }
+    // Re-enter the pixel-mask access state before the four HDR reads.
+    outb(0, VGAREG_DAC_WRITE_ADDRESS);
     stdvga_pelmask_read();
     stdvga_pelmask_read();
     stdvga_pelmask_read();
     stdvga_pelmask_read();
-    stdvga_pelmask_write(GET_GLOBAL(table->hidden_dac));
-    stdvga_pelmask_write(0xff);
+    stdvga_pelmask_write(hdr);
+    outb(0, VGAREG_DAC_WRITE_ADDRESS);
+    stdvga_pelmask_write(mask);
 
     u8 memmodel = GET_GLOBAL(table->info.memmodel);
     u8 on = 0;
@@ -418,7 +437,7 @@ cirrus_switch_mode(struct cirrus_mode_s *table)
     else if (memmodel != MM_TEXT)
         on = 0x01;
     stdvga_attr_mask(0x10, 0x01, on);
-    stdvga_attrindex_write(0x20);
+    // Leave the display disabled until the caller has loaded its palette.
 }
 
 static void
@@ -448,15 +467,19 @@ clext_set_mode(struct vgamode_s *vmode_g, int flags)
         return VBE_RETURN_STATUS_FAILED;
 
     if (!is_cirrus_mode(vmode_g)) {
-        cirrus_switch_mode(&mode_switchback);
+        cirrus_switch_mode(&mode_switchback, flags);
         dprintf(1, "cirrus mode switch regular\n");
         return stdvga_set_mode(vmode_g, flags);
     }
     struct cirrus_mode_s *table_g = container_of(
         vmode_g, struct cirrus_mode_s, info);
-    cirrus_switch_mode(table_g);
-    if (GET_GLOBAL(vmode_g->memmodel) == MM_PACKED && !(flags & MF_NOPALETTE))
+    cirrus_switch_mode(table_g, flags);
+    if (GET_GLOBAL(vmode_g->memmodel) == MM_PACKED && !(flags & MF_NOPALETTE)) {
         stdvga_set_packed_palette();
+        if (flags & MF_GRAYSUM)
+            stdvga_perform_gray_scale_summing(0, 256);
+    }
+    stdvga_attrindex_write(0x20);
     if (!(flags & MF_LINEARFB))
         cirrus_enable_16k_granularity();
     if (!(flags & MF_NOCLEARMEM))
