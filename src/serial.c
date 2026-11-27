@@ -106,6 +106,29 @@ getComAddr(struct bregs *regs)
     return addr;
 }
 
+// The BIOS status byte reserves bit 7 for a service timeout.  The
+// 16550 FIFO error summary must not be reported as a timeout.
+static void
+serial_status(struct bregs *regs, u16 addr)
+{
+    regs->ah = inb(addr+SEROFF_LSR) & 0x7f;
+    regs->al = inb(addr+SEROFF_MSR);
+    set_success(regs);
+}
+
+// Program the divisor and framing without changing modem control outputs.
+static void
+serial_init_port(struct bregs *regs, u16 addr, u8 lcr, u8 rate)
+{
+    u16 divisor = rate ? 0x600 >> rate : 0x417;
+
+    outb(inb(addr+SEROFF_LCR) | SER_LCR_DLAB, addr+SEROFF_LCR);
+    outb(divisor & 0xff, addr+SEROFF_DLL);
+    outb(divisor >> 8, addr+SEROFF_DLH);
+    outb(lcr, addr+SEROFF_LCR);
+    serial_status(regs, addr);
+}
+
 // SERIAL - INITIALIZE PORT
 static void
 handle_1400(struct bregs *regs)
@@ -113,19 +136,7 @@ handle_1400(struct bregs *regs)
     u16 addr = getComAddr(regs);
     if (!addr)
         return;
-    outb(inb(addr+SEROFF_LCR) | SER_LCR_DLAB, addr+SEROFF_LCR);
-    if ((regs->al & 0xE0) == 0) {
-        outb(0x17, addr+SEROFF_DLL);
-        outb(0x04, addr+SEROFF_DLH);
-    } else {
-        u16 val16 = 0x600 >> ((regs->al & 0xE0) >> 5);
-        outb(val16 & 0xFF, addr+SEROFF_DLL);
-        outb(val16 >> 8, addr+SEROFF_DLH);
-    }
-    outb(regs->al & 0x1F, addr+SEROFF_LCR);
-    regs->ah = inb(addr+SEROFF_LSR);
-    regs->al = inb(addr+SEROFF_MSR);
-    set_success(regs);
+    serial_init_port(regs, addr, regs->al & 0x1f, regs->al >> 5);
 }
 
 // SERIAL - WRITE CHARACTER TO PORT
@@ -199,9 +210,30 @@ handle_1403(struct bregs *regs)
     u16 addr = getComAddr(regs);
     if (!addr)
         return;
-    regs->ah = inb(addr+SEROFF_LSR);
-    regs->al = inb(addr+SEROFF_MSR);
-    set_success(regs);
+    serial_status(regs, addr);
+}
+
+// PS/2 extended initialize (INT 14h/AH=04h, RBIL tables 00307-00309).
+static void
+handle_1404(struct bregs *regs)
+{
+    u16 addr = getComAddr(regs);
+    if (!addr)
+        return;
+    if (regs->al > 1 || regs->bh > 4 || regs->bl > 1
+        || regs->ch > 3 || regs->cl > 8) {
+        set_invalid(regs);
+        return;
+    }
+
+    u8 lcr = regs->ch | (regs->bl << 2);
+    if (regs->bh) {
+        // Odd, even, mark and space parity map to LCR bits 3..5.
+        lcr |= ((regs->bh - 1) << 4) | 0x08;
+    }
+    if (!regs->al)
+        lcr |= 0x40;
+    serial_init_port(regs, addr, lcr, regs->cl);
 }
 
 // PS/2 and 1993-era AMIBIOS extended modem-control register access.
@@ -224,9 +256,7 @@ handle_1405(struct bregs *regs)
     }
 
     regs->bl = inb(addr+SEROFF_MCR) & 0x1f;
-    regs->ah = inb(addr+SEROFF_LSR);
-    regs->al = inb(addr+SEROFF_MSR);
-    set_success(regs);
+    serial_status(regs, addr);
 }
 
 static void
@@ -250,6 +280,7 @@ handle_14(struct bregs *regs)
     case 0x01: handle_1401(regs); break;
     case 0x02: handle_1402(regs); break;
     case 0x03: handle_1403(regs); break;
+    case 0x04: handle_1404(regs); break;
     case 0x05: handle_1405(regs); break;
     default:   handle_14XX(regs); break;
     }
