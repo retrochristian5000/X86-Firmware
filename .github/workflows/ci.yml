@@ -120,6 +120,9 @@ jobs:
       - name: Verify CSM ABI packing boundaries
         run: cc -std=c11 -Wall -Wextra -Werror -Isrc -fsyntax-only scripts/test-legacybios-pack.c
 
+      - name: Verify real-mode compiler inlining policy
+        run: python3 scripts/test-inline-policy.py
+
       - name: Reject unreviewed forced-inline declarations
         shell: bash
         run: |

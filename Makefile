@@ -109,9 +109,11 @@ $(error Compiler cannot assemble 16-bit firmware using -m16 or the .code16gcc fa
 endif
 endif
 
+# GCC's stack-frame tuning is optional. Do not disable ordinary inlining
+# on compilers that lack it: that changes real-mode calls and stack usage.
 CFLAGS16 := $(CFLAGSSEG) -DMODE16=1 \
     $(CFLAGS16_MODE) \
-    $(call cc-option,$(CC),--param large-stack-frame=4,-fno-inline)
+    $(call cc-option,$(CC),--param large-stack-frame=4,)
 
 # Run with "make V=1" to see the actual compile commands
 ifdef V
