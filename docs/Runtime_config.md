@@ -338,3 +338,44 @@ SeaBIOS does not implement an AMIBIOS Setup program. On various physical PCs,
 F9 can choose boot devices or restore defaults *within* a vendor's setup UI.
 Do not interpret this optional SeaBIOS boot-menu binding as those capabilities.
 
+
+
+### Optional Sound Blaster 16 DSP POST diagnostic
+
+For emulation development, enable `CONFIG_SB16_POST_DIAGNOSTIC` in a
+QEMU SeaBIOS build with debug output enabled. It defaults to disabled to
+avoid growing normal firmware images. Use the resulting BIOS with a
+Sound Blaster 16 at its default 220h base and explicitly request the test:
+
+```
+-audiodev none,id=snd -device sb16,audiodev=snd \
+-fw_cfg name=opt/org.seabios/whp-sb16-post,string=1 \
+-debugcon file:sb16-post.log -global isa-debugcon.iobase=0x402
+```
+
+The test runs after option ROMs and asynchronous device setup, before
+boot preparation. It resets the DSP (holding reset for at least 3 us),
+checks AA h, reads the version (E1h), requires major revision 4 and
+checks DSP identification (E0h with 55h, expected AAh). Each status wait
+has a 10 ms deadline. Failure is diagnostic only; boot continues.
+Do not request this test on a configuration in which 220h belongs to
+another device or an option ROM has started sound playback. The test
+does not scan alternate ports, program DMA, alter PIC masks, allocate
+ISA resources, synthesize audio or install an OS driver. It does not
+prove PCM playback or interrupt behavior.
+
+The CT1741's internal 8052-family firmware is separate from SeaBIOS
+x86 firmware; the early CT1740 is a fixed-resource ISA card, not an
+ISA PnP card requiring BIOS firmware upload. A future internal DSP
+firmware implementation belongs in the emulated card and must preserve
+its independently running processor, reset and command/data interface.
+Do not embed proprietary Creative ROM images in SeaBIOS.
+
+Reference: Creative Sound Blaster Series Hardware Programming Guide,
+chapters 2 and 6:
+https://pdos.csail.mit.edu/6.828/2018/readings/hardware/SoundBlaster.pdf
+
+Validation: check the debug log for PASS with the QEMU CT1740 at 220h;
+repeat without the card to verify the bounded failure and continued
+boot. Omit the fw_cfg option to verify there is no diagnostic I/O.
+Compare enabled and disabled BIOS sizes before using a 128 KiB image.

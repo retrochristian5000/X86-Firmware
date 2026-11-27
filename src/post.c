@@ -15,6 +15,7 @@
 #include "hw/pic.h" // pic_setup
 #include "hw/ps2port.h" // ps2port_setup
 #include "hw/rtc.h" // rtc_write
+#include "hw/sb16-post.h" // sb16_post_diagnostic
 #include "hw/serialio.h" // serial_debug_preinit
 #include "hw/usb.h" // usb_setup
 #include "malloc.h" // malloc_init
@@ -347,6 +348,10 @@ maininit(void)
     if (extended_post)
         whp_extended_post();
     post_timing_log(post_timing, &post_last, "extended POST");
+
+#if CONFIG_SB16_POST_DIAGNOSTIC
+    sb16_post_diagnostic();
+#endif
 
     // Prepare for boot. malloc_prepboot() has already returned unused
     // whole pages of ZoneHigh to E820 before reporting retained storage.

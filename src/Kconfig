@@ -540,6 +540,15 @@ endmenu
 source vgasrc/Kconfig
 
 menu "Debugging"
+    config SB16_POST_DIAGNOSTIC
+        bool "Sound Blaster 16 DSP POST diagnostic"
+        depends on QEMU && DEBUG_LEVEL != 0
+        default n
+        help
+            Include an opt-in DSP reset, version and identification test.
+            Intended for emulation development, not card initialization.
+            Normal firmware builds do not include this diagnostic.
+
     config DEBUG_LEVEL
         int "Debug level"
         default 1
