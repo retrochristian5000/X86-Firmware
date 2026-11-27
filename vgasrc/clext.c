@@ -6,6 +6,7 @@
 // This file may be distributed under the terms of the GNU LGPLv3 license.
 
 #include "biosvar.h" // GET_GLOBAL
+#include "clext-address.h" // cirrus_start_decode
 #include "bregs.h" // struct bregs
 #include "hw/pci.h" // pci_config_readl
 #include "hw/pci_regs.h" // PCI_BASE_ADDRESS_0
@@ -351,8 +352,7 @@ clext_get_displaystart(struct vgamode_s *curmode_g)
     u8 b1 = stdvga_crtc_read(crtc_addr, 0x0d);
     u8 b3 = stdvga_crtc_read(crtc_addr, 0x1b);
     u8 b4 = stdvga_crtc_read(crtc_addr, 0x1d);
-    int val = (b1 | (b2<<8) | ((b3 & 0x01) << 16) | ((b3 & 0x0c) << 15)
-               | ((b4 & 0x80) << 12));
+    int val = cirrus_start_decode(b1, b2, b3, b4);
     return val * 4 / stdvga_vram_ratio(curmode_g);
 }
 
@@ -364,9 +364,8 @@ clext_set_displaystart(struct vgamode_s *curmode_g, int val)
     stdvga_crtc_write(crtc_addr, 0x0d, val);
     stdvga_crtc_write(crtc_addr, 0x0c, val >> 8);
     // Screen Start A[19:16] lives in CR1D[7] and CR1B[3:2,0].
-    stdvga_crtc_mask(crtc_addr, 0x1d, 0x80, (val & 0x80000) >> 12);
-    stdvga_crtc_mask(crtc_addr, 0x1b, 0x0d
-                     , ((val & 0x10000) >> 16) | ((val & 0x60000) >> 15));
+    stdvga_crtc_mask(crtc_addr, 0x1d, 0x80, cirrus_start_cr1d(val));
+    stdvga_crtc_mask(crtc_addr, 0x1b, 0x0d, cirrus_start_cr1b(val));
     return 0;
 }
 
