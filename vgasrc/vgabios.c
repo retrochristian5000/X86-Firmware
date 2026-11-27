@@ -919,9 +919,10 @@ handle_101230(struct bregs *regs)
 static void
 handle_101231(struct bregs *regs)
 {
+    // INT 10h AH=12h BL=31h controls the next mode set (BDA 40:89).
     u8 v = (regs->al & 0x01) << 3;
-    u8 mctl = GET_BDA(video_ctl) & ~0x08;
-    SET_BDA(video_ctl, mctl | v);
+    u8 mctl = GET_BDA(modeset_ctl) & ~MF_NOPALETTE;
+    SET_BDA(modeset_ctl, mctl | v);
     regs->al = 0x12;
 }
 
